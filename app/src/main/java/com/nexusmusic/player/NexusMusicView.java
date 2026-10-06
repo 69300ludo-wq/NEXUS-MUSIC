@@ -182,10 +182,14 @@ public final class NexusMusicView extends LinearLayout {
         route.setText(output == null ? "Android Audio" : output);
     }
     public void setProgress(float p, long pos, long dur) {
+        int next = Math.round(Math.max(0f, Math.min(1f, p)) * 1000f);
+        String label = format(pos) + "   •   " + (dur > 0 ? format(dur) : "LIVE");
+        if (positionMs == pos && durationMs == dur && seek.getProgress() == next
+                && label.contentEquals(time.getText())) return;
         positionMs = pos;
         durationMs = dur;
-        seek.setProgress(Math.round(Math.max(0f, Math.min(1f, p)) * 1000f));
-        time.setText(format(pos) + "   •   " + (dur > 0 ? format(dur) : "LIVE"));
+        if (seek.getProgress() != next) seek.setProgress(next);
+        if (!label.contentEquals(time.getText())) time.setText(label);
     }
     public void showHome() { screen = Screen.HOME; renderScreen(); }
 
