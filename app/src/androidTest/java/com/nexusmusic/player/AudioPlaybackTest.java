@@ -5,6 +5,7 @@ import static org.junit.Assert.assertTrue;
 import android.content.ComponentName;
 import android.content.Context;
 import android.net.Uri;
+import android.os.Looper;
 
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
@@ -37,7 +38,9 @@ public class AudioPlaybackTest {
         ListenableFuture<MediaController> connection = null;
         try {
             SessionToken token = new SessionToken(app, new ComponentName(app, PlaybackService.class));
-            connection = new MediaController.Builder(app, token).buildAsync();
+            connection = new MediaController.Builder(app, token)
+                    .setApplicationLooper(Looper.getMainLooper())
+                    .buildAsync();
             MediaController player = connection.get(20, TimeUnit.SECONDS);
 
             InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
@@ -67,7 +70,11 @@ public class AudioPlaybackTest {
             assertTrue("ExoPlayer never reached STATE_READY", ready.get());
             assertTrue("Playback timeline did not advance", position.get() > 250);
         } finally {
-            if (connection != null) MediaController.releaseFuture(connection);
+            if (connection != null) {
+                final ListenableFuture<MediaController> pending = connection;
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(
+                        () -> MediaController.releaseFuture(pending));
+            }
             wav.delete();
         }
     }
