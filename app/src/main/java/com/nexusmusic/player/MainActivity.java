@@ -75,15 +75,13 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
         android.util.Log.i("NEXUS_RECOVERY", "STARTED");
         handler.post(ticker);
 
-        if (BuildConfig.DEBUG) {
-            Intent launchIntent = getIntent();
-            if (launchIntent.getBooleanExtra("self_test_audio", false)) {
-                handler.postDelayed(this::onTestAudio, 500L);
-            } else if (launchIntent.getBooleanExtra("self_test_picker", false)) {
-                handler.postDelayed(this::onPickLocalAudio, 500L);
-            } else if (launchIntent.getBooleanExtra("self_test_radio", false)) {
-                handler.postDelayed(() -> searchRadios("France", "name"), 500L);
-            }
+        Intent launchIntent = getIntent();
+        if (launchIntent.getBooleanExtra("self_test_audio", false)) {
+            handler.postDelayed(this::onTestAudio, 500L);
+        } else if (launchIntent.getBooleanExtra("self_test_picker", false)) {
+            handler.postDelayed(this::onPickLocalAudio, 500L);
+        } else if (launchIntent.getBooleanExtra("self_test_radio", false)) {
+            handler.postDelayed(() -> searchRadios("France", "name"), 500L);
         }
     }
 
