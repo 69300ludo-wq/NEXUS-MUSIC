@@ -109,6 +109,13 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
         setContentView(view);
         view.setStatus("PRÊT");
 
+        Intent launchIntent = getIntent();
+        if (launchIntent.getBooleanExtra("self_test_picker", false)) {
+            handler.postDelayed(this::onPickLocalAudio, 600L);
+        } else if (launchIntent.getBooleanExtra("self_test_radio", false)) {
+            handler.postDelayed(() -> searchRadios("France"), 600L);
+        }
+
         IntentFilter noisy = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(noisyReceiver, noisy, Context.RECEIVER_NOT_EXPORTED);
@@ -446,6 +453,7 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
 
     private void showStations(List<Station> stations) {
         view.setStatus("RADIOS TROUVÉES");
+        android.util.Log.i("NEXUS_FINAL", "RADIO_PASS " + stations.size());
         String[] labels = new String[stations.size()];
         for (int i = 0; i < stations.size(); i++) labels[i] = stations.get(i).label();
 
