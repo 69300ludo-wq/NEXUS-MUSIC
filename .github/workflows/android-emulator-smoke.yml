@@ -51,7 +51,7 @@ jobs:
           arch: x86_64
           profile: pixel_4
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          emulator-options: -no-window -gpu swiftshader_indirect -no-boot-anim -camera-back none -camera-front none
           script: |
             gradle :app:assembleDebug
             adb install -r app/build/outputs/apk/debug/app-debug.apk
