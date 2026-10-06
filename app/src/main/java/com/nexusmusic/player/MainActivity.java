@@ -118,7 +118,12 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
     private final Player.Listener playerListener = new Player.Listener() {
         @Override public void onIsPlayingChanged(boolean playing) {
             view.setPlaying(playing);
-            if (playing) view.setStatus("LECTURE ACTIVE");
+            if (playing) {
+                view.setStatus("LECTURE ACTIVE");
+                android.util.Log.i("NEXUS_AUDIO", "PLAYING");
+            } else {
+                android.util.Log.i("NEXUS_AUDIO", "NOT_PLAYING");
+            }
         }
 
         @Override public void onMediaMetadataChanged(MediaMetadata metadata) {
@@ -261,8 +266,7 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
                 writeTestWav(file);
                 runOnUiThread(() -> {
                     play(Uri.fromFile(file), "NEXUS Audio Test",
-                            "440 Hz • PCM 16-bit / 44.1 kHz • Pause pour arrêter");
-                    if (player != null) player.setRepeatMode(Player.REPEAT_MODE_ONE);
+                            "440 Hz • PCM 16-bit / 44.1 kHz");
                     view.showHome();
                 });
             } catch (IOException e) {
@@ -458,7 +462,7 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
         final int sampleRate = 44100;
         final int channels = 2;
         final int bits = 16;
-        final int seconds = 30;
+        final int seconds = 5;
         final int frames = sampleRate * seconds;
         final int blockAlign = channels * bits / 8;
         final int dataSize = frames * blockAlign;
