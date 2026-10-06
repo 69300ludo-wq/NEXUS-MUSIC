@@ -273,6 +273,7 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
                 .build());
 
         p.setOnPreparedListener(mp -> {
+            android.util.Log.i("NEXUS_RECOVERY", "AUDIO_PREPARED " + title);
             try {
                 mp.start();
                 android.util.Log.i("NEXUS_NATIVE_AUDIO", "PLAYING " + title);
