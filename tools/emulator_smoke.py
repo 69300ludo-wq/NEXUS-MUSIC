@@ -14,110 +14,94 @@ def adb(*args, timeout=60):
     return p.stdout
 
 def hierarchy():
-    time.sleep(0.8)
-    messages = []
-    for _ in range(4):
-        result = adb("shell", "uiautomator", "dump", "--compressed", "/sdcard/nexus-ui.xml", timeout=90)
-        messages.append(result.strip())
-        if "dumped to" in result:
+    time.sleep(0.5)
+    for _ in range(5):
+        out = adb("shell", "uiautomator", "dump", "--compressed",
+                  "/sdcard/nexus-ui.xml", timeout=90)
+        if "dumped to" in out:
             return ET.fromstring(adb("shell", "cat", "/sdcard/nexus-ui.xml"))
-        time.sleep(1.5)
-    raise AssertionError("UI hierarchy unavailable: " + " | ".join(messages))
+        time.sleep(1)
+    raise AssertionError("UI hierarchy unavailable")
 
 def find(label):
     root = hierarchy()
-    return [n for n in root.iter("node") if label.lower() in
-            (n.get("text", "") + " " + n.get("content-desc", "")).lower()]
+    return [n for n in root.iter("node")
+            if label.lower() in (n.get("text","") + " " + n.get("content-desc","")).lower()]
 
 def require(label):
     matches = find(label)
-    if not matches:
-        root = hierarchy()
-        print("VISIBLE NODES:", [n.get("text", "") for n in root.iter("node") if n.get("text", "")][:45], flush=True)
-        print("ACTIVITY:", adb("shell", "dumpsys", "activity", "activities")[-3000:], flush=True)
-        print("ANDROID ERRORS:", adb("logcat", "-d", "-s", "AndroidRuntime:E")[-6000:], flush=True)
-        Path("test-results").mkdir(exist_ok=True)
-        with open("test-results/ui-failure.png", "wb") as out:
-            subprocess.run(["adb", "exec-out", "screencap", "-p"], stdout=out, timeout=40)
-        raise AssertionError("Expected visible UI text: " + label)
-    print("PASS visible:", label, flush=True)
-    return matches[0]
-
-def wait_require(label, attempts=8):
-    for _ in range(attempts):
-        matches = find(label)
-        if matches:
-            print("PASS visible:", label, flush=True)
-            return matches[0]
-        time.sleep(0.8)
-    return require(label)
+    if matches:
+        print("PASS visible:", label, flush=True)
+        return matches[0]
+    with open("test-results/ui-failure.png", "wb") as out:
+        subprocess.run(["adb","exec-out","screencap","-p"], stdout=out, timeout=40)
+    raise AssertionError("Expected visible UI text: " + label)
 
 def tap(label):
-    n = require(label)
-    coords = list(map(int, re.findall(r"\d+", n.get("bounds", ""))))
-    assert len(coords) == 4, "Invalid bounds for " + label
-    x, y = (coords[0]+coords[2])//2, (coords[1]+coords[3])//2
-    adb("shell", "input", "tap", str(x), str(y))
+    node = require(label)
+    nums = list(map(int, re.findall(r"\d+", node.get("bounds",""))))
+    assert len(nums) == 4
+    x=(nums[0]+nums[2])//2
+    y=(nums[1]+nums[3])//2
+    adb("shell","input","tap",str(x),str(y))
     print("PASS tapped:", label, flush=True)
 
+def swipe_up():
+    adb("shell","input","swipe","540","1800","540","700","350")
+    time.sleep(0.6)
+
 Path("test-results").mkdir(exist_ok=True)
-adb("logcat", "-c")
-response = adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
-assert "Status: ok" in response, "Activity launch failed"
-time.sleep(2)
+adb("logcat","-c")
 
-with open("test-results/nexus-home.png", "wb") as out:
-    subprocess.run(["adb", "exec-out", "screencap", "-p"], stdout=out, check=True, timeout=40)
-print("PASS captured home screenshot", flush=True)
+launch = adb("shell","am","start","-W","-n",PACKAGE+"/.MainActivity")
+assert "Status: ok" in launch
+time.sleep(1.5)
 
-require("NEXUS")
-require("QUANTUM PLAYER")
-require("IMPORTER UN FICHIER AUDIO")
+with open("test-results/nexus-recovery-home.png","wb") as out:
+    subprocess.run(["adb","exec-out","screencap","-p"],stdout=out,check=True,timeout=40)
+
+require("NEXUS MUSIC")
+require("CORE RECOVERY 2.0")
 require("TEST AUDIO INTERNE")
+require("CHOISIR UNE MUSIQUE")
 
 tap("TEST AUDIO INTERNE")
-time.sleep(2.0)
-audio_logs = adb("logcat", "-d", "-s", "NEXUS_AUDIO:I")
-assert "PLAYING" in audio_logs, "ExoPlayer never entered PLAYING state"
-print("PASS ExoPlayer entered active playback state", flush=True)
-time.sleep(4.5)
+time.sleep(2.5)
+logs = adb("logcat","-d","-s","NEXUS_NATIVE_AUDIO:I")
+assert "PLAYING NEXUS AUDIO TEST" in logs, "Native MediaPlayer never entered PLAYING"
+print("PASS native MediaPlayer entered PLAYING", flush=True)
 
-tap("IMPORTER UN FICHIER AUDIO")
-time.sleep(1.5)
-activities = adb("shell", "dumpsys", "activity", "activities")
-assert ("documentsui" in activities.lower() or "documentsactivity" in activities.lower()), "Android file picker did not open"
+require("LECTURE ACTIVE")
+
+tap("CHOISIR UNE MUSIQUE")
+time.sleep(1.2)
+activities = adb("shell","dumpsys","activity","activities")
+assert ("documentsui" in activities.lower() or "documentsactivity" in activities.lower())
 print("PASS Android audio file picker opened", flush=True)
-adb("shell", "input", "keyevent", "4")
+adb("shell","input","keyevent","4")
 time.sleep(0.8)
 
-tap("RADIO")
-require("EXPLORER LES RADIOS DU MONDE")
-require("AJOUTER UNE URL DIRECTE")
+swipe_up()
+require("RECHERCHER UNE RADIO")
+require("URL RADIO DIRECTE")
 
-tap("EXPLORER LES RADIOS DU MONDE")
-require("Explorer les radios du monde")
+tap("RECHERCHER UNE RADIO")
+require("Rechercher une radio")
 tap("Station")
-wait_require("Radios disponibles")
+time.sleep(2.5)
+require("Radios disponibles")
 print("PASS Radio Browser directory displayed", flush=True)
-adb("shell", "input", "keyevent", "4")
+adb("shell","input","keyevent","4")
 time.sleep(0.8)
 
-tap("AJOUTER UNE URL DIRECTE")
-require("Ajouter une radio")
+tap("URL RADIO DIRECTE")
+require("URL radio directe")
 print("PASS direct radio URL dialog opened", flush=True)
-adb("shell", "input", "keyevent", "4")
-time.sleep(0.8)
+adb("shell","input","keyevent","4")
 
-tap("AUDIO LAB")
-require("PURE AUDIO")
-require("ROADMAP")
+android_errors = adb("logcat","-d","-s","AndroidRuntime:E")
+assert "Process: " + PACKAGE not in android_errors
+print("PASS core recovery navigation and no crash", flush=True)
 
-tap("MUSIQUE")
-require("IMPORTER UN FICHIER AUDIO")
-
-logs = adb("logcat", "-d", "-s", "AndroidRuntime:E")
-assert "Process: " + PACKAGE not in logs, "NEXUS crashed with an AndroidRuntime exception"
-print("PASS navigation, audio self-test, file picker, radio directory and no crash", flush=True)
-
-with open("test-results/nexus-stable-home.png", "wb") as out:
-    subprocess.run(["adb", "exec-out", "screencap", "-p"], stdout=out, check=True, timeout=40)
+with open("test-results/nexus-recovery-final.png","wb") as out:
+    subprocess.run(["adb","exec-out","screencap","-p"],stdout=out,check=True,timeout=40)
