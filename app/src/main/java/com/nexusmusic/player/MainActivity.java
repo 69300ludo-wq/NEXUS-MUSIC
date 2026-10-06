@@ -79,17 +79,23 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         view = new NexusMusicView(this);
         view.setActions(this);
-        setContentView(view);
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.addView(view, new android.widget.FrameLayout.LayoutParams(-1, -2));
+        setContentView(scroll);
     }
 
     @Override
     protected void onStart() {
         super.onStart();
         SessionToken token = new SessionToken(this, new ComponentName(this, PlaybackService.class));
-        controllerFuture = new MediaController.Builder(this, token).buildAsync();
-        controllerFuture.addListener(() -> {
+        final ListenableFuture<MediaController> pending = new MediaController.Builder(this, token).buildAsync();
+        controllerFuture = pending;
+        pending.addListener(() -> {
+            if (controllerFuture != pending || isDestroyed()) return;
             try {
-                controller = controllerFuture.get();
+                controller = pending.get();
                 controller.addListener(playerListener);
                 syncPlayer();
             } catch (Exception e) {
@@ -267,19 +273,20 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
                 .setTitle("Explorer les radios du monde")
                 .setMessage("Laisse vide pour les radios populaires.")
                 .setView(input)
-                .setNegativeButton("Annuler", null)
-                .setPositiveButton("Rechercher", (d, w) -> searchRadios(input.getText().toString().trim()))
+                .setNegativeButton("Pays", (d, w) -> searchRadios(input.getText().toString().trim(), "country"))
+                .setNeutralButton("Genre", (d, w) -> searchRadios(input.getText().toString().trim(), "tag"))
+                .setPositiveButton("Station", (d, w) -> searchRadios(input.getText().toString().trim(), "name"))
                 .show();
     }
 
-    private void searchRadios(String query) {
+    private void searchRadios(String query, String field) {
         view.setStatus("RECHERCHE RADIO…");
         network.execute(() -> {
             HttpURLConnection c = null;
             try {
                 String endpoint = query.isEmpty()
                         ? RADIO_API + "/json/stations/topvote/40?hidebroken=true"
-                        : RADIO_API + "/json/stations/search?hidebroken=true&order=votes&reverse=true&limit=40&name=" + Uri.encode(query);
+                        : RADIO_API + "/json/stations/search?hidebroken=true&order=votes&reverse=true&limit=40&is_https=true&" + field + "=" + Uri.encode(query);
                 c = (HttpURLConnection) new URL(endpoint).openConnection();
                 c.setConnectTimeout(8000);
                 c.setReadTimeout(10000);
