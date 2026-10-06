@@ -2,7 +2,6 @@ package com.nexusmusic.player;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
@@ -19,6 +18,7 @@ import android.view.Window;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
@@ -26,11 +26,7 @@ import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.Tracks;
-import androidx.media3.session.MediaController;
-import androidx.media3.session.SessionToken;
-
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.MoreExecutors;
+import androidx.media3.exoplayer.ExoPlayer;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -65,20 +61,19 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
     private final ExecutorService network = Executors.newSingleThreadExecutor();
 
     private NexusMusicView view;
-    private ListenableFuture<MediaController> controllerFuture;
-    private MediaController controller;
+    private ExoPlayer player;
     private SharedPreferences prefs;
 
     private final Runnable ticker = new Runnable() {
         @Override public void run() {
             updateProgress();
-            handler.postDelayed(this, 500L);
+            handler.postDelayed(this, 400L);
         }
     };
 
-    @Override
-    protected void onCreate(Bundle state) {
+    @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+
         Window window = getWindow();
         window.setStatusBarColor(0xFF02040A);
         window.setNavigationBarColor(0xFF02040A);
@@ -86,46 +81,37 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         view = new NexusMusicView(this);
         view.setActions(this);
+
         android.widget.ScrollView scroll = new android.widget.ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
         scroll.addView(view, new android.widget.FrameLayout.LayoutParams(-1, -2));
         setContentView(scroll);
-    }
 
-    @Override
-    protected void onStart() {
-        super.onStart();
-        SessionToken token = new SessionToken(this, new ComponentName(this, PlaybackService.class));
-        final ListenableFuture<MediaController> pending = new MediaController.Builder(this, token).buildAsync();
-        controllerFuture = pending;
-        pending.addListener(() -> {
-            if (controllerFuture != pending || isDestroyed()) return;
-            try {
-                controller = pending.get();
-                controller.addListener(playerListener);
-                syncPlayer();
-            } catch (Exception e) {
-                view.setStatus("AUDIO CORE OFFLINE");
-            }
-        }, MoreExecutors.directExecutor());
+        AudioAttributes attributes = new AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                .build();
+
+        player = new ExoPlayer.Builder(this)
+                .setAudioAttributes(attributes, true)
+                .build();
+        player.setHandleAudioBecomingNoisy(true);
+        player.setWakeMode(C.WAKE_MODE_LOCAL);
+        player.addListener(playerListener);
+
+        view.setStatus("AUDIO CORE READY");
         handler.post(ticker);
     }
 
-    @Override
-    protected void onStop() {
+    @Override protected void onDestroy() {
         handler.removeCallbacks(ticker);
-        if (controllerFuture != null) {
-            MediaController.releaseFuture(controllerFuture);
-            controllerFuture = null;
-            controller = null;
-        }
-        super.onStop();
-    }
-
-    @Override
-    protected void onDestroy() {
         network.shutdownNow();
+        if (player != null) {
+            player.removeListener(playerListener);
+            player.release();
+            player = null;
+        }
         super.onDestroy();
     }
 
@@ -136,7 +122,7 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
 
         @Override public void onMediaMetadataChanged(MediaMetadata metadata) {
             if (metadata.title != null) view.setTrackTitle(metadata.title.toString());
-            view.setTrackSubtitle(metadata.artist == null ? "" : metadata.artist.toString());
+            if (metadata.artist != null) view.setTrackSubtitle(metadata.artist.toString());
         }
 
         @Override public void onTracksChanged(Tracks tracks) {
@@ -144,47 +130,37 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
         }
 
         @Override public void onPlaybackStateChanged(int state) {
-            if (state == Player.STATE_BUFFERING) view.setStatus("BUFFERING");
-            if (state == Player.STATE_READY) view.setStatus("AUDIO CORE READY");
-            if (state == Player.STATE_ENDED) view.setStatus("LECTURE TERMINÉE");
+            if (state == Player.STATE_BUFFERING) view.setStatus("BUFFERING…");
+            else if (state == Player.STATE_READY) view.setStatus("AUDIO CORE READY");
+            else if (state == Player.STATE_ENDED) view.setStatus("LECTURE TERMINÉE");
         }
 
         @Override public void onPlayerError(PlaybackException error) {
             view.setStatus("ERREUR AUDIO");
             Toast.makeText(MainActivity.this,
-                    "Lecture impossible : " + error.getErrorCodeName(), Toast.LENGTH_LONG).show();
+                    "Lecture impossible : " + error.getErrorCodeName(),
+                    Toast.LENGTH_LONG).show();
         }
     };
 
-    private void syncPlayer() {
-        if (controller == null) return;
-        view.setPlaying(controller.isPlaying());
-        MediaMetadata m = controller.getMediaMetadata();
-        if (m.title != null) view.setTrackTitle(m.title.toString());
-        if (m.artist != null) view.setTrackSubtitle(m.artist.toString());
-        updateSignal(controller.getCurrentTracks());
-        updateProgress();
-    }
-
     private void updateProgress() {
-        if (controller == null) {
-            view.setProgress(0f, 0L, 0L);
-            return;
-        }
-        long pos = Math.max(0L, controller.getCurrentPosition());
-        long dur = controller.getDuration();
-        float p = dur > 0L ? Math.min(1f, (float) pos / (float) dur) : 0f;
-        view.setProgress(p, pos, dur);
+        if (player == null) return;
+        long pos = Math.max(0L, player.getCurrentPosition());
+        long dur = player.getDuration();
+        float progress = dur > 0L && dur != C.TIME_UNSET
+                ? Math.min(1f, (float) pos / (float) dur) : 0f;
+        view.setProgress(progress, pos, dur == C.TIME_UNSET ? 0L : dur);
     }
 
     private void updateSignal(Tracks tracks) {
         String source = "Format en attente";
+        outer:
         for (Tracks.Group group : tracks.getGroups()) {
             if (group.getType() != C.TRACK_TYPE_AUDIO) continue;
             for (int i = 0; i < group.length; i++) {
                 if (!group.isTrackSelected(i)) continue;
                 source = describeFormat(group.getTrackFormat(i));
-                break;
+                break outer;
             }
         }
         view.setSignalDiagnostics(source, describeRoute());
@@ -206,14 +182,14 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
 
     private String describeRoute() {
         if (Build.VERSION.SDK_INT < 33) return "Android Audio";
-        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-        if (am == null) return "Android Audio";
+        AudioManager manager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (manager == null) return "Android Audio";
         try {
-            android.media.AudioAttributes aa = new android.media.AudioAttributes.Builder()
+            android.media.AudioAttributes attrs = new android.media.AudioAttributes.Builder()
                     .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
                     .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
                     .build();
-            List<AudioDeviceInfo> devices = am.getAudioDevicesForAttributes(aa);
+            List<AudioDeviceInfo> devices = manager.getAudioDevicesForAttributes(attrs);
             if (devices.isEmpty()) return "Android Audio";
             AudioDeviceInfo d = devices.get(0);
             String type;
@@ -229,18 +205,50 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
                 default: type = "Sortie audio";
             }
             CharSequence product = d.getProductName();
-            return product == null || product.length() == 0 ? type : type + " • " + product;
+            return product == null || product.length() == 0
+                    ? type : type + " • " + product;
         } catch (RuntimeException e) {
             return "Android Audio";
         }
     }
 
-    @Override
-    public void onTestAudio() {
-        if (controller == null) {
-            Toast.makeText(this, "Le moteur audio démarre…", Toast.LENGTH_SHORT).show();
-            return;
+    @Override public void onPickLocalAudio() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("audio/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(intent, PICK_AUDIO);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != PICK_AUDIO || resultCode != RESULT_OK || data == null) return;
+        Uri uri = data.getData();
+        if (uri == null) return;
+        try {
+            getContentResolver().takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (SecurityException ignored) {}
+        play(uri, displayName(uri), "Fichier local");
+        view.showHome();
+    }
+
+    @Override public void onTogglePlayPause() {
+        if (player == null) return;
+        if (player.isPlaying()) player.pause();
+        else player.play();
+    }
+
+    @Override public void onSeekTo(float fraction) {
+        if (player == null) return;
+        long duration = player.getDuration();
+        if (duration > 0L && duration != C.TIME_UNSET) {
+            player.seekTo((long) (duration * Math.max(0f, Math.min(1f, fraction))));
         }
+    }
+
+    @Override public void onTestAudio() {
         view.setStatus("TEST AUDIO…");
         network.execute(() -> {
             try {
@@ -254,10 +262,189 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
             } catch (IOException e) {
                 runOnUiThread(() -> {
                     view.setStatus("ERREUR TEST AUDIO");
-                    Toast.makeText(this, "Impossible de créer le test audio.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this,
+                            "Impossible de créer le test audio.",
+                            Toast.LENGTH_LONG).show();
                 });
             }
         });
+    }
+
+    @Override public void onBrowseRadios() {
+        EditText input = new EditText(this);
+        input.setHint("Nom, pays ou style : jazz, France, ambient…");
+        input.setSingleLine(true);
+        new AlertDialog.Builder(this)
+                .setTitle("Explorer les radios du monde")
+                .setMessage("Laisse vide pour les radios populaires.")
+                .setView(input)
+                .setNegativeButton("Pays",
+                        (d, w) -> searchRadios(input.getText().toString().trim(), "country"))
+                .setNeutralButton("Genre",
+                        (d, w) -> searchRadios(input.getText().toString().trim(), "tag"))
+                .setPositiveButton("Station",
+                        (d, w) -> searchRadios(input.getText().toString().trim(), "name"))
+                .show();
+    }
+
+    @Override public void onAddRadio() {
+        EditText input = new EditText(this);
+        input.setHint("https://… ou http://…");
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        input.setText(prefs.getString(LAST_URL, ""));
+        new AlertDialog.Builder(this)
+                .setTitle("Ajouter une radio")
+                .setView(input)
+                .setNegativeButton("Annuler", null)
+                .setPositiveButton("Lire", (d, w) -> {
+                    String url = input.getText().toString().trim();
+                    if (!(url.startsWith("https://") || url.startsWith("http://"))) {
+                        Toast.makeText(this,
+                                "Entre un flux radio HTTP ou HTTPS direct.",
+                                Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    String sub = host(url);
+                    saveRadio(url, "Radio Internet", sub);
+                    play(Uri.parse(url), "Radio Internet", sub);
+                    view.showHome();
+                })
+                .show();
+    }
+
+    @Override public void onResumeLastRadio() {
+        String url = prefs.getString(LAST_URL, "");
+        if (url.isEmpty()) {
+            onAddRadio();
+            return;
+        }
+        play(Uri.parse(url),
+                prefs.getString(LAST_NAME, "Radio Internet"),
+                prefs.getString(LAST_SUB, host(url)));
+        view.showHome();
+    }
+
+    @Override public boolean hasSavedRadio() {
+        return !prefs.getString(LAST_URL, "").isEmpty();
+    }
+
+    private void searchRadios(String query, String field) {
+        view.setStatus("RECHERCHE RADIO…");
+        network.execute(() -> {
+            for (String base : RADIO_APIS) {
+                HttpURLConnection connection = null;
+                try {
+                    String endpoint = query.isEmpty()
+                            ? base + "/json/stations/topvote/50?hidebroken=true"
+                            : base + "/json/stations/search?hidebroken=true&order=votes&reverse=true&limit=50&"
+                            + field + "=" + Uri.encode(query);
+                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                    connection.setConnectTimeout(6500);
+                    connection.setReadTimeout(8500);
+                    connection.setRequestProperty("User-Agent", "NEXUS-MUSIC/1.1 Android");
+                    connection.setRequestProperty("Accept", "application/json");
+                    int code = connection.getResponseCode();
+                    if (code < 200 || code >= 300) continue;
+
+                    StringBuilder body = new StringBuilder();
+                    try (BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) body.append(line);
+                    }
+
+                    JSONArray array = new JSONArray(body.toString());
+                    List<Station> stations = new ArrayList<>();
+                    for (int i = 0; i < array.length() && stations.size() < 30; i++) {
+                        JSONObject o = array.optJSONObject(i);
+                        if (o == null) continue;
+                        String url = o.optString("url_resolved",
+                                o.optString("url", "")).trim();
+                        if (!(url.startsWith("https://") || url.startsWith("http://"))) continue;
+                        stations.add(new Station(
+                                o.optString("name", "Radio").trim(),
+                                url,
+                                o.optString("country", "").trim(),
+                                o.optString("codec", "").trim(),
+                                o.optInt("bitrate", 0)));
+                    }
+                    if (!stations.isEmpty()) {
+                        runOnUiThread(() -> showStations(stations));
+                        return;
+                    }
+                } catch (Exception ignored) {
+                } finally {
+                    if (connection != null) connection.disconnect();
+                }
+            }
+
+            runOnUiThread(() -> {
+                view.setStatus("RADIO DIRECTORY OFFLINE");
+                Toast.makeText(this,
+                        "Annuaire radio indisponible. Utilise une URL directe ou réessaie.",
+                        Toast.LENGTH_LONG).show();
+            });
+        });
+    }
+
+    private void showStations(List<Station> stations) {
+        String[] labels = new String[stations.size()];
+        for (int i = 0; i < stations.size(); i++) labels[i] = stations.get(i).label();
+        new AlertDialog.Builder(this)
+                .setTitle("Radios disponibles")
+                .setItems(labels, (d, which) -> {
+                    Station s = stations.get(which);
+                    saveRadio(s.url, s.name, s.subtitle());
+                    play(Uri.parse(s.url), s.name, s.subtitle());
+                    view.showHome();
+                })
+                .setNegativeButton("Fermer", null)
+                .show();
+    }
+
+    private void saveRadio(String url, String name, String subtitle) {
+        prefs.edit()
+                .putString(LAST_URL, url)
+                .putString(LAST_NAME, name)
+                .putString(LAST_SUB, subtitle)
+                .apply();
+    }
+
+    private void play(Uri uri, String title, String subtitle) {
+        if (player == null) return;
+        MediaMetadata metadata = new MediaMetadata.Builder()
+                .setTitle(title)
+                .setArtist(subtitle)
+                .build();
+        MediaItem item = new MediaItem.Builder()
+                .setUri(uri)
+                .setMediaMetadata(metadata)
+                .build();
+        player.setMediaItem(item);
+        player.prepare();
+        player.play();
+        view.setTrackTitle(title);
+        view.setTrackSubtitle(subtitle);
+        view.setStatus("ANALYSE DU SIGNAL…");
+    }
+
+    private String displayName(Uri uri) {
+        try (Cursor cursor = getContentResolver().query(uri,
+                new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (index >= 0 && cursor.getString(index) != null) {
+                    return cursor.getString(index);
+                }
+            }
+        } catch (Exception ignored) {}
+        return "Titre local";
+    }
+
+    private static String host(String value) {
+        String host = Uri.parse(value).getHost();
+        return host == null ? "Flux radio" : host;
     }
 
     private static void writeTestWav(File file) throws IOException {
@@ -285,9 +472,10 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
             writeIntLE(out, dataSize);
 
             for (int i = 0; i < frames; i++) {
-                double envelope = Math.min(1.0, i / 2205.0) *
-                        Math.min(1.0, (frames - i) / 2205.0);
-                short sample = (short) (Math.sin(2.0 * Math.PI * 440.0 * i / sampleRate)
+                double envelope = Math.min(1.0, i / 2205.0)
+                        * Math.min(1.0, (frames - i) / 2205.0);
+                short sample = (short) (Math.sin(
+                        2.0 * Math.PI * 440.0 * i / sampleRate)
                         * 0.22 * envelope * Short.MAX_VALUE);
                 writeShortLE(out, sample);
                 writeShortLE(out, sample);
@@ -305,218 +493,6 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
     private static void writeShortLE(FileOutputStream out, int value) throws IOException {
         out.write(value & 0xFF);
         out.write((value >>> 8) & 0xFF);
-    }
-
-    @Override
-    public void onPickLocalAudio() {
-        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        i.addCategory(Intent.CATEGORY_OPENABLE);
-        i.setType("audio/*");
-        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        startActivityForResult(i, PICK_AUDIO);
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != PICK_AUDIO || resultCode != RESULT_OK || data == null) return;
-        Uri uri = data.getData();
-        if (uri == null) return;
-        try {
-            getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        } catch (SecurityException ignored) {
-        }
-        play(uri, displayName(uri), "Fichier local");
-        view.showHome();
-    }
-
-    @Override
-    public void onTogglePlayPause() {
-        if (controller == null) return;
-        if (controller.isPlaying()) controller.pause(); else controller.play();
-    }
-
-    @Override
-    public void onSeekTo(float fraction) {
-        if (controller == null) return;
-        long d = controller.getDuration();
-        if (d > 0) controller.seekTo((long) (d * Math.max(0f, Math.min(1f, fraction))));
-    }
-
-    @Override
-    public void onBrowseRadios() {
-        EditText input = new EditText(this);
-        input.setHint("Nom, pays ou style : jazz, France, ambient…");
-        input.setSingleLine(true);
-        new AlertDialog.Builder(this)
-                .setTitle("Explorer les radios du monde")
-                .setMessage("Laisse vide pour les radios populaires.")
-                .setView(input)
-                .setNegativeButton("Pays", (d, w) -> searchRadios(input.getText().toString().trim(), "country"))
-                .setNeutralButton("Genre", (d, w) -> searchRadios(input.getText().toString().trim(), "tag"))
-                .setPositiveButton("Station", (d, w) -> searchRadios(input.getText().toString().trim(), "name"))
-                .show();
-    }
-
-    private void searchRadios(String query, String field) {
-        view.setStatus("RECHERCHE RADIO…");
-        network.execute(() -> {
-            Exception lastError = null;
-            for (String base : RADIO_APIS) {
-                HttpURLConnection connection = null;
-                try {
-                    String endpoint = query.isEmpty()
-                            ? base + "/json/stations/topvote/40?hidebroken=true"
-                            : base + "/json/stations/search?hidebroken=true&order=votes&reverse=true&limit=40&is_https=true&"
-                            + field + "=" + Uri.encode(query);
-                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
-                    connection.setConnectTimeout(6500);
-                    connection.setReadTimeout(8500);
-                    connection.setRequestProperty("User-Agent", "NEXUS-MUSIC/1.0.1 Android");
-                    connection.setRequestProperty("Accept", "application/json");
-                    int code = connection.getResponseCode();
-                    if (code < 200 || code >= 300) throw new IllegalStateException("HTTP " + code);
-
-                    StringBuilder body = new StringBuilder();
-                    try (BufferedReader r = new BufferedReader(
-                            new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-                        String line;
-                        while ((line = r.readLine()) != null) body.append(line);
-                    }
-
-                    JSONArray array = new JSONArray(body.toString());
-                    List<Station> stations = new ArrayList<>();
-                    for (int i = 0; i < array.length() && stations.size() < 24; i++) {
-                        JSONObject o = array.optJSONObject(i);
-                        if (o == null) continue;
-                        String url = o.optString("url_resolved", o.optString("url", "")).trim();
-                        if (!url.startsWith("https://")) continue;
-                        stations.add(new Station(
-                                o.optString("name", "Radio").trim(),
-                                url,
-                                o.optString("country", "").trim(),
-                                o.optString("codec", "").trim(),
-                                o.optInt("bitrate", 0)));
-                    }
-                    List<Station> result = stations;
-                    runOnUiThread(() -> showStations(result));
-                    return;
-                } catch (Exception e) {
-                    lastError = e;
-                } finally {
-                    if (connection != null) connection.disconnect();
-                }
-            }
-
-            Exception error = lastError;
-            runOnUiThread(() -> {
-                view.setStatus("RADIO DIRECTORY OFFLINE");
-                Toast.makeText(this,
-                        "Annuaire radio indisponible. Réessaie ou utilise une URL HTTPS directe.",
-                        Toast.LENGTH_LONG).show();
-            });
-        });
-    }
-
-    private void showStations(List<Station> stations) {
-        if (stations.isEmpty()) {
-            view.setStatus("AUCUNE RADIO HTTPS");
-            Toast.makeText(this, "Aucune station HTTPS trouvée.", Toast.LENGTH_LONG).show();
-            return;
-        }
-        String[] labels = new String[stations.size()];
-        for (int i = 0; i < stations.size(); i++) labels[i] = stations.get(i).label();
-        new AlertDialog.Builder(this)
-                .setTitle("Radios disponibles")
-                .setItems(labels, (d, which) -> {
-                    Station s = stations.get(which);
-                    saveRadio(s.url, s.name, s.subtitle());
-                    play(Uri.parse(s.url), s.name, s.subtitle());
-                    view.showHome();
-                })
-                .setNegativeButton("Fermer", null)
-                .show();
-    }
-
-    @Override
-    public void onAddRadio() {
-        EditText input = new EditText(this);
-        input.setHint("https://… flux MP3/AAC/HLS");
-        input.setSingleLine(true);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        input.setText(prefs.getString(LAST_URL, ""));
-        new AlertDialog.Builder(this)
-                .setTitle("Ajouter une radio")
-                .setView(input)
-                .setNegativeButton("Annuler", null)
-                .setPositiveButton("Lire", (d, w) -> {
-                    String url = input.getText().toString().trim();
-                    if (!url.startsWith("https://")) {
-                        Toast.makeText(this, "Utilise un flux HTTPS direct.", Toast.LENGTH_LONG).show();
-                        return;
-                    }
-                    String sub = host(url);
-                    saveRadio(url, "Radio Internet", sub);
-                    play(Uri.parse(url), "Radio Internet", sub);
-                    view.showHome();
-                })
-                .show();
-    }
-
-    @Override
-    public void onResumeLastRadio() {
-        String url = prefs.getString(LAST_URL, "");
-        if (url.isEmpty()) {
-            onAddRadio();
-            return;
-        }
-        play(Uri.parse(url),
-                prefs.getString(LAST_NAME, "Radio Internet"),
-                prefs.getString(LAST_SUB, host(url)));
-        view.showHome();
-    }
-
-    @Override
-    public boolean hasSavedRadio() {
-        return !prefs.getString(LAST_URL, "").isEmpty();
-    }
-
-    private void saveRadio(String url, String name, String sub) {
-        prefs.edit().putString(LAST_URL, url).putString(LAST_NAME, name).putString(LAST_SUB, sub).apply();
-    }
-
-    private void play(Uri uri, String title, String subtitle) {
-        if (controller == null) {
-            Toast.makeText(this, "Le moteur audio démarre…", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        MediaMetadata metadata = new MediaMetadata.Builder()
-                .setTitle(title)
-                .setArtist(subtitle)
-                .build();
-        controller.setMediaItem(new MediaItem.Builder().setUri(uri).setMediaMetadata(metadata).build());
-        controller.prepare();
-        controller.play();
-        view.setTrackTitle(title);
-        view.setTrackSubtitle(subtitle);
-        view.setStatus("ANALYSE DU SIGNAL…");
-    }
-
-    private String displayName(Uri uri) {
-        try (Cursor c = getContentResolver().query(uri,
-                new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
-            if (c != null && c.moveToFirst()) {
-                int i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                if (i >= 0 && c.getString(i) != null) return c.getString(i);
-            }
-        } catch (Exception ignored) {
-        }
-        return "Titre local";
-    }
-
-    private static String host(String value) {
-        String h = Uri.parse(value).getHost();
-        return h == null ? "Flux radio" : h;
     }
 
     private static final class Station {
