@@ -24,6 +24,7 @@ public final class NexusMusicView extends FrameLayout {
         void onAddRadio();
         void onResumeLastRadio();
         boolean hasSavedRadio();
+        void onTestAudio();
     }
 
     private enum Screen { HOME, RADIO, LAB }
@@ -45,7 +46,7 @@ public final class NexusMusicView extends FrameLayout {
 
     public NexusMusicView(Context c){
         super(c);
-        setMinimumHeight(dp(900));
+        setMinimumHeight(dp(680));
 
         hud=new NexusHudBackdrop(c);
         addView(hud,new LayoutParams(-1,-1));
@@ -78,48 +79,48 @@ public final class NexusMusicView extends FrameLayout {
         root.addView(nav);
 
         FrameLayout cockpit=new FrameLayout(c);
-        cockpit.setMinimumHeight(dp(340));
-        root.addView(cockpit,new LinearLayout.LayoutParams(-1,dp(340)));
+        cockpit.setMinimumHeight(dp(180));
+        root.addView(cockpit,new LinearLayout.LayoutParams(-1,dp(180)));
 
         TextView leftHud=miniPanel("SOURCE\nAUTO DETECT",CYAN);
-        FrameLayout.LayoutParams lpL=new FrameLayout.LayoutParams(dp(94),dp(58),Gravity.LEFT|Gravity.TOP);
-        lpL.setMargins(dp(0),dp(58),0,0);
+        FrameLayout.LayoutParams lpL=new FrameLayout.LayoutParams(dp(78),dp(44),Gravity.LEFT|Gravity.TOP);
+        lpL.setMargins(dp(0),dp(24),0,0);
         cockpit.addView(leftHud,lpL);
 
         TextView rightHud=miniPanel("OUTPUT\nLIVE ROUTE",VIOLET);
-        FrameLayout.LayoutParams lpR=new FrameLayout.LayoutParams(dp(94),dp(58),Gravity.RIGHT|Gravity.TOP);
-        lpR.setMargins(0,dp(58),dp(0),0);
+        FrameLayout.LayoutParams lpR=new FrameLayout.LayoutParams(dp(78),dp(44),Gravity.RIGHT|Gravity.TOP);
+        lpR.setMargins(0,dp(24),dp(0),0);
         cockpit.addView(rightHud,lpR);
 
         orb=new OrbView(c);
-        FrameLayout.LayoutParams orbLp=new FrameLayout.LayoutParams(dp(280),dp(280),Gravity.CENTER);
+        FrameLayout.LayoutParams orbLp=new FrameLayout.LayoutParams(dp(160),dp(160),Gravity.CENTER);
         cockpit.addView(orb,orbLp);
 
         coreLabel=text("NEXUS CORE // QUANTUM FIELD",8,CYAN,true);
         coreLabel.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams coreLp=new FrameLayout.LayoutParams(dp(220),dp(28),Gravity.CENTER_HORIZONTAL|Gravity.BOTTOM);
-        coreLp.setMargins(0,0,0,dp(12));
+        FrameLayout.LayoutParams coreLp=new FrameLayout.LayoutParams(dp(210),dp(24),Gravity.CENTER_HORIZONTAL|Gravity.BOTTOM);
+        coreLp.setMargins(0,0,0,dp(2));
         cockpit.addView(coreLabel,coreLp);
 
         TextView dsp=miniPanel("DSP\nROADMAP",PINK);
-        FrameLayout.LayoutParams dspLp=new FrameLayout.LayoutParams(dp(84),dp(54),Gravity.LEFT|Gravity.BOTTOM);
-        dspLp.setMargins(dp(8),0,0,dp(12));
+        FrameLayout.LayoutParams dspLp=new FrameLayout.LayoutParams(dp(72),dp(42),Gravity.LEFT|Gravity.BOTTOM);
+        dspLp.setMargins(dp(2),0,0,dp(2));
         cockpit.addView(dsp,dspLp);
 
         TextView path=miniPanel("SIGNAL\nTRANSPARENT",BLUE);
-        FrameLayout.LayoutParams pathLp=new FrameLayout.LayoutParams(dp(92),dp(54),Gravity.RIGHT|Gravity.BOTTOM);
-        pathLp.setMargins(0,0,dp(8),dp(12));
+        FrameLayout.LayoutParams pathLp=new FrameLayout.LayoutParams(dp(78),dp(42),Gravity.RIGHT|Gravity.BOTTOM);
+        pathLp.setMargins(0,0,dp(2),dp(2));
         cockpit.addView(path,pathLp);
 
         title=text("Aucun morceau",21,WHITE,true);
         title.setGravity(Gravity.CENTER);
         title.setSingleLine(true);
-        root.addView(title,new LinearLayout.LayoutParams(-1,dp(34)));
+        root.addView(title,new LinearLayout.LayoutParams(-1,dp(30)));
 
         subtitle=text("Importe un fichier ou ouvre la Radio",10,CYAN,false);
         subtitle.setGravity(Gravity.CENTER);
         subtitle.setSingleLine(true);
-        root.addView(subtitle,new LinearLayout.LayoutParams(-1,dp(26)));
+        root.addView(subtitle,new LinearLayout.LayoutParams(-1,dp(22)));
 
         LinearLayout diag=row();
         diag.setPadding(dp(12),dp(6),dp(12),dp(6));
@@ -135,7 +136,7 @@ public final class NexusMusicView extends FrameLayout {
         route=text("Android Audio",8,MUTED,false);
         route.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
         diag.addView(route,new LinearLayout.LayoutParams(0,dp(44),1f));
-        root.addView(diag,new LinearLayout.LayoutParams(-1,dp(56)));
+        root.addView(diag,new LinearLayout.LayoutParams(-1,dp(48)));
 
         root.addView(gap(8),new LinearLayout.LayoutParams(1,dp(8)));
 
@@ -172,13 +173,13 @@ public final class NexusMusicView extends FrameLayout {
         media.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
         controls.addView(media,new LinearLayout.LayoutParams(0,dp(44),1f));
         transport.addView(controls);
-        root.addView(transport,new LinearLayout.LayoutParams(-1,dp(82)));
+        root.addView(transport,new LinearLayout.LayoutParams(-1,dp(70)));
 
         root.addView(gap(10),new LinearLayout.LayoutParams(1,dp(10)));
 
         sectionInfo=text("PLAYER // LOCAL HIGH FIDELITY",9,CYAN,true);
         sectionInfo.setGravity(Gravity.CENTER);
-        root.addView(sectionInfo,new LinearLayout.LayoutParams(-1,dp(28)));
+        root.addView(sectionInfo,new LinearLayout.LayoutParams(-1,dp(22)));
 
         actionArea=column();
         primary=action("＋  IMPORTER UN FICHIER AUDIO",CYAN);
@@ -189,13 +190,13 @@ public final class NexusMusicView extends FrameLayout {
             if(screen==Screen.HOME)actions.onPickLocalAudio();
             else if(screen==Screen.RADIO)actions.onBrowseRadios();
         });
-        secondary.setOnClickListener(v->{if(actions!=null&&screen==Screen.RADIO)actions.onAddRadio();});
+        secondary.setOnClickListener(v->{if(actions==null)return;if(screen==Screen.HOME)actions.onTestAudio();else if(screen==Screen.RADIO)actions.onAddRadio();});
         third.setOnClickListener(v->{if(actions!=null&&screen==Screen.RADIO)actions.onResumeLastRadio();});
-        actionArea.addView(primary,new LinearLayout.LayoutParams(-1,dp(52)));
+        actionArea.addView(primary,new LinearLayout.LayoutParams(-1,dp(44)));
         actionArea.addView(gap(6),new LinearLayout.LayoutParams(1,dp(6)));
-        actionArea.addView(secondary,new LinearLayout.LayoutParams(-1,dp(52)));
+        actionArea.addView(secondary,new LinearLayout.LayoutParams(-1,dp(44)));
         actionArea.addView(gap(6),new LinearLayout.LayoutParams(1,dp(6)));
-        actionArea.addView(third,new LinearLayout.LayoutParams(-1,dp(52)));
+        actionArea.addView(third,new LinearLayout.LayoutParams(-1,dp(44)));
         root.addView(actionArea);
 
         labArea=column();
@@ -243,7 +244,8 @@ public final class NexusMusicView extends FrameLayout {
             sectionInfo.setText("PLAYER // LOCAL HIGH FIDELITY");
             primary.setText("＋  IMPORTER UN FICHIER AUDIO");
             primary.setVisibility(VISIBLE);
-            secondary.setVisibility(GONE);
+            secondary.setText("◉  TEST AUDIO INTERNE");
+            secondary.setVisibility(VISIBLE);
             third.setVisibility(GONE);
             actionArea.setVisibility(VISIBLE);
             labArea.setVisibility(GONE);
