@@ -118,6 +118,7 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
     private final Player.Listener playerListener = new Player.Listener() {
         @Override public void onIsPlayingChanged(boolean playing) {
             view.setPlaying(playing);
+            if (playing) view.setStatus("LECTURE ACTIVE");
         }
 
         @Override public void onMediaMetadataChanged(MediaMetadata metadata) {
@@ -451,7 +452,7 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
         final int sampleRate = 44100;
         final int channels = 2;
         final int bits = 16;
-        final int seconds = 2;
+        final int seconds = 5;
         final int frames = sampleRate * seconds;
         final int blockAlign = channels * bits / 8;
         final int dataSize = frames * blockAlign;
