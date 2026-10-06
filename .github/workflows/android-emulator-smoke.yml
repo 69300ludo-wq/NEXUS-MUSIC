@@ -6,6 +6,7 @@ on:
     paths:
       - 'app/**'
       - 'tools/emulator_smoke.py'
+      - 'tools/radio_api_smoke.py'
       - '.github/workflows/android-emulator-smoke.yml'
   workflow_dispatch:
 
@@ -37,6 +38,10 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+
+      - name: Check Radio Browser directory
+        continue-on-error: true
+        run: python3 tools/radio_api_smoke.py
 
       - name: Boot Android and test NEXUS
         uses: reactivecircus/android-emulator-runner@v2
