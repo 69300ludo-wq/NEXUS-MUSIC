@@ -40,9 +40,16 @@ def tap(label):
     adb("shell", "input", "tap", str(x), str(y))
     print("PASS tapped:", label, flush=True)
 
+Path("test-results").mkdir(exist_ok=True)
 adb("logcat", "-c")
 response = adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
 assert "Status: ok" in response, "Activity launch failed"
+time.sleep(3)
+
+with open("test-results/nexus-home.png", "wb") as out:
+    subprocess.run(["adb", "exec-out", "screencap", "-p"], stdout=out, check=True, timeout=40)
+print("PASS captured home screenshot", flush=True)
+
 require("NEXUS")
 require("QUANTUM PLAYER")
 tap("RADIO")
@@ -63,9 +70,6 @@ print("PASS compact layout scrolling", flush=True)
 adb("shell", "wm", "size", "reset")
 adb("shell", "wm", "density", "reset")
 
-Path("test-results").mkdir(exist_ok=True)
-with open("test-results/nexus-home.png", "wb") as out:
-    subprocess.run(["adb", "exec-out", "screencap", "-p"], stdout=out, check=True, timeout=40)
 logs = adb("logcat", "-d", "-s", "AndroidRuntime:E")
 assert "Process: " + PACKAGE not in logs, "NEXUS crashed with an AndroidRuntime exception"
 print("PASS navigation, compact layout and no crash", flush=True)
