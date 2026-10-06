@@ -28,7 +28,14 @@ def require(label):
     root = hierarchy()
     matches = [n for n in root.iter("node") if label.lower() in
                (n.get("text", "") + " " + n.get("content-desc", "")).lower()]
-    assert matches, "Expected visible UI text: " + label
+    if not matches:
+        print("VISIBLE NODES:", [n.get("text", "") for n in root.iter("node") if n.get("text", "")][:35], flush=True)
+        print("ACTIVITY:", adb("shell", "dumpsys", "activity", "activities")[-2500:], flush=True)
+        print("ANDROID ERRORS:", adb("logcat", "-d", "-s", "AndroidRuntime:E")[-6000:], flush=True)
+        Path("test-results").mkdir(exist_ok=True)
+        with open("test-results/ui-failure.png", "wb") as out:
+            subprocess.run(["adb", "exec-out", "screencap", "-p"], stdout=out, timeout=40)
+        raise AssertionError("Expected visible UI text: " + label)
     print("PASS visible:", label, flush=True)
     return matches[0]
 
