@@ -261,6 +261,7 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
         p.setOnPreparedListener(mp -> {
             try {
                 mp.start();
+                android.util.Log.i("NEXUS_NATIVE_AUDIO", "PLAYING " + title);
                 view.setPlaying(true);
                 view.setStatus("LECTURE ACTIVE");
                 view.appendLog("PLAYING : " + title);
