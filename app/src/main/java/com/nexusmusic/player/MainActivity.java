@@ -132,8 +132,12 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
 
         @Override public void onPlaybackStateChanged(int state) {
             if (state == Player.STATE_BUFFERING) view.setStatus("BUFFERING…");
-            else if (state == Player.STATE_READY) view.setStatus("AUDIO CORE READY");
-            else if (state == Player.STATE_ENDED) view.setStatus("LECTURE TERMINÉE");
+            else if (state == Player.STATE_READY) {
+                view.setStatus(player != null && player.isPlaying()
+                        ? "LECTURE ACTIVE" : "AUDIO CORE READY");
+            } else if (state == Player.STATE_ENDED) {
+                view.setStatus("LECTURE TERMINÉE");
+            }
         }
 
         @Override public void onPlayerError(PlaybackException error) {
@@ -452,7 +456,7 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
         final int sampleRate = 44100;
         final int channels = 2;
         final int bits = 16;
-        final int seconds = 5;
+        final int seconds = 30;
         final int frames = sampleRate * seconds;
         final int blockAlign = channels * bits / 8;
         final int dataSize = frames * blockAlign;
