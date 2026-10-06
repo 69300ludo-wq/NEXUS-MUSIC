@@ -77,7 +77,8 @@ require("TEST AUDIO INTERNE")
 
 tap("TEST AUDIO INTERNE")
 wait_require("NEXUS Audio Test")
-print("PASS offline Media3 audio self-test started", flush=True)
+wait_require("LECTURE ACTIVE")
+print("PASS ExoPlayer entered active playback state", flush=True)
 
 tap("IMPORTER UN FICHIER AUDIO")
 time.sleep(1.5)
