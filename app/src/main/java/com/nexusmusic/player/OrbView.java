@@ -67,7 +67,7 @@ public final class OrbView extends View {
         p.setShader(null);
         p.setStyle(Paint.Style.FILL);
 
-        postInvalidateDelayed(active ? 16L : 60L);
+        if (active) postInvalidateDelayed(33L);
     }
 
     private int alpha(int color, float value) {
