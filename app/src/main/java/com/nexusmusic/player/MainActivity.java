@@ -237,7 +237,11 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
         try {
             MediaPlayer p = new MediaPlayer();
             configurePlayer(p, title, subtitle);
-            p.setDataSource(this, uri);
+            if ("file".equalsIgnoreCase(uri.getScheme()) && uri.getPath() != null) {
+                p.setDataSource(uri.getPath());
+            } else {
+                p.setDataSource(this, uri);
+            }
             player = p;
             p.prepareAsync();
         } catch (Exception e) {
