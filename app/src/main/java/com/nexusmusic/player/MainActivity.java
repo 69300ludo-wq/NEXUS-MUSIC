@@ -2,20 +2,21 @@ package com.nexusmusic.player;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.ClipData;
-import android.content.ClipboardManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.database.Cursor;
 import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
-import android.media.ToneGenerator;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.provider.OpenableColumns;
 import android.text.InputType;
 import android.widget.EditText;
@@ -30,13 +31,15 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity implements NexusMusicView.Actions {
     private static final int PICK_AUDIO = 4101;
-
     private static final String[] RADIO_APIS = {
             "https://de1.api.radio-browser.info",
             "https://nl1.api.radio-browser.info",
@@ -48,20 +51,40 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
 
     private NexusMusicView view;
     private MediaPlayer player;
-    private ToneGenerator tone;
+    private AudioManager audioManager;
+    private AudioFocusRequest focusRequest;
+    private boolean receiverRegistered;
 
     private final Runnable ticker = new Runnable() {
         @Override public void run() {
-            if (player != null) {
-                try {
-                    int duration = player.getDuration();
-                    int position = player.getCurrentPosition();
-                    float progress = duration > 0 ? (float) position / duration : 0f;
-                    view.setProgress(progress, position, duration);
-                } catch (Exception ignored) {}
-            }
+            updateProgress();
             handler.postDelayed(this, 500L);
         }
+    };
+
+    private final BroadcastReceiver noisyReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
+                pausePlayback();
+            }
+        }
+    };
+
+    private final AudioManager.OnAudioFocusChangeListener focusListener = change -> {
+        if (player == null) return;
+        try {
+            if (change == AudioManager.AUDIOFOCUS_LOSS) {
+                pausePlayback();
+            } else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                if (player.isPlaying()) player.pause();
+                view.setPlaying(false);
+                view.setStatus("PAUSE AUDIO");
+            } else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+                player.setVolume(0.25f, 0.25f);
+            } else if (change == AudioManager.AUDIOFOCUS_GAIN) {
+                player.setVolume(1f, 1f);
+            }
+        } catch (Exception ignored) {}
     };
 
     @Override protected void onCreate(Bundle state) {
@@ -69,54 +92,43 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
         getWindow().setStatusBarColor(0xFF02040A);
         getWindow().setNavigationBarColor(0xFF02040A);
 
+        audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (Build.VERSION.SDK_INT >= 26) {
+            android.media.AudioAttributes attrs = new android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build();
+            focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(attrs)
+                    .setOnAudioFocusChangeListener(focusListener)
+                    .build();
+        }
+
         view = new NexusMusicView(this);
         view.setActions(this);
         setContentView(view);
-
-        log("NEXUS SAFE MODE 2.1 démarré");
-        log("Android " + Build.VERSION.RELEASE + " / SDK " + Build.VERSION.SDK_INT);
-        log("Appareil : " + Build.MANUFACTURER + " " + Build.MODEL);
         view.setStatus("PRÊT");
 
-        handler.post(ticker);
-
-        Intent i = getIntent();
-        if (i.getBooleanExtra("self_test_tone", false)) {
-            handler.postDelayed(this::onTestSpeaker, 500L);
-        } else if (i.getBooleanExtra("self_test_picker", false)) {
-            handler.postDelayed(this::onPickLocalAudio, 500L);
-        } else if (i.getBooleanExtra("self_test_radio", false)) {
-            handler.postDelayed(() -> searchRadios("France"), 500L);
+        IntentFilter noisy = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(noisyReceiver, noisy, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(noisyReceiver, noisy);
         }
+        receiverRegistered = true;
+
+        handler.post(ticker);
     }
 
     @Override protected void onDestroy() {
         handler.removeCallbacks(ticker);
         network.shutdownNow();
+        if (receiverRegistered) {
+            try { unregisterReceiver(noisyReceiver); } catch (Exception ignored) {}
+            receiverRegistered = false;
+        }
         releasePlayer();
-        if (tone != null) {
-            try { tone.release(); } catch (Exception ignored) {}
-            tone = null;
-        }
         super.onDestroy();
-    }
-
-    @Override public void onTestSpeaker() {
-        try {
-            if (tone != null) {
-                try { tone.release(); } catch (Exception ignored) {}
-            }
-            tone = new ToneGenerator(AudioManager.STREAM_MUSIC, 90);
-            boolean started = tone.startTone(ToneGenerator.TONE_DTMF_1, 1200);
-            log("Test haut-parleur déclenché : " + started);
-            android.util.Log.i("NEXUS_SAFE", "TONE_TRIGGERED " + started);
-            view.setStatus(started ? "BIP ENVOYÉ" : "BIP REFUSÉ");
-            if (!started) {
-                Toast.makeText(this, "Android a refusé le bip système.", Toast.LENGTH_LONG).show();
-            }
-        } catch (Exception e) {
-            fail("BIP", e);
-        }
     }
 
     @Override public void onPickLocalAudio() {
@@ -126,37 +138,30 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
             intent.setType("audio/*");
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                     | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-            log("Ouverture du sélecteur Android");
             startActivityForResult(intent, PICK_AUDIO);
         } catch (Exception e) {
-            fail("SÉLECTEUR", e);
+            showError("Impossible d'ouvrir les fichiers", e);
         }
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != PICK_AUDIO) return;
-
-        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-            log("Sélection annulée");
-            return;
-        }
+        if (requestCode != PICK_AUDIO || resultCode != RESULT_OK || data == null) return;
 
         Uri uri = data.getData();
+        if (uri == null) return;
+
         try {
             getContentResolver().takePersistableUriPermission(
                     uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
         } catch (Exception ignored) {}
 
-        String name = displayName(uri);
-        log("Fichier : " + name);
-        playUri(uri, name, "Fichier local");
+        playUri(uri, displayName(uri), "Fichier local");
     }
 
     @Override public void onTogglePlayPause() {
         if (player == null) {
-            Toast.makeText(this, "Aucun média chargé.", Toast.LENGTH_SHORT).show();
-            log("PLAY demandé sans média");
+            Toast.makeText(this, "Choisis d'abord une musique ou une radio.", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -165,25 +170,39 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
                 player.pause();
                 view.setPlaying(false);
                 view.setStatus("PAUSE");
-                log("Pause");
             } else {
+                if (!requestAudioFocus()) {
+                    Toast.makeText(this, "Le téléphone refuse le focus audio.", Toast.LENGTH_LONG).show();
+                    return;
+                }
                 player.start();
                 view.setPlaying(true);
                 view.setStatus("LECTURE ACTIVE");
-                log("Lecture");
             }
         } catch (Exception e) {
-            fail("PLAY/PAUSE", e);
+            showError("Lecture impossible", e);
         }
     }
 
+    @Override public void onSeekTo(float fraction) {
+        if (player == null) return;
+        try {
+            int duration = player.getDuration();
+            if (duration > 0) {
+                int target = (int) (duration * Math.max(0f, Math.min(1f, fraction)));
+                player.seekTo(target);
+            }
+        } catch (Exception ignored) {}
+    }
+
     @Override public void onBrowseRadios() {
-        EditText input = new EditText(this);
-        input.setHint("Ex: France, Jazz, RTL, FIP");
+        final EditText input = new EditText(this);
+        input.setHint("Ex : FIP, France, Jazz");
         input.setSingleLine(true);
 
         new AlertDialog.Builder(this)
                 .setTitle("Rechercher une radio")
+                .setMessage("Recherche par nom, pays et genre.")
                 .setView(input)
                 .setNegativeButton("Annuler", null)
                 .setPositiveButton("Rechercher", (d, w) ->
@@ -192,20 +211,19 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
     }
 
     @Override public void onAddRadio() {
-        EditText input = new EditText(this);
+        final EditText input = new EditText(this);
         input.setHint("https://... ou http://...");
         input.setSingleLine(true);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
 
         new AlertDialog.Builder(this)
-                .setTitle("URL radio directe")
+                .setTitle("Flux radio direct")
                 .setView(input)
                 .setNegativeButton("Annuler", null)
                 .setPositiveButton("Lire", (d, w) -> {
                     String url = input.getText().toString().trim();
                     if (!(url.startsWith("https://") || url.startsWith("http://"))) {
-                        Toast.makeText(this, "URL HTTP/HTTPS invalide.", Toast.LENGTH_LONG).show();
-                        log("URL radio invalide");
+                        Toast.makeText(this, "Adresse HTTP/HTTPS invalide.", Toast.LENGTH_LONG).show();
                         return;
                     }
                     playNetwork(url, "Radio Internet", host(url));
@@ -213,46 +231,35 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
                 .show();
     }
 
-    @Override public void onCopyDiagnostic() {
-        ClipboardManager clipboard =
-                (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-        String text = view.getDiagnosticText();
-        clipboard.setPrimaryClip(ClipData.newPlainText("NEXUS diagnostic", text));
-        Toast.makeText(this, "Diagnostic copié.", Toast.LENGTH_SHORT).show();
-        log("Diagnostic copié");
-    }
-
     private void playUri(Uri uri, String title, String subtitle) {
         releasePlayer();
         view.setTitleText(title, subtitle);
         view.setStatus("PRÉPARATION…");
-        log("Préparation : " + uri);
 
         try {
-            MediaPlayer p = new MediaPlayer();
-            configurePlayer(p, title);
-            p.setDataSource(this, uri);
-            player = p;
-            p.prepareAsync();
+            MediaPlayer next = new MediaPlayer();
+            configurePlayer(next, title);
+            next.setDataSource(this, uri);
+            player = next;
+            next.prepareAsync();
         } catch (Exception e) {
-            fail("FICHIER", e);
+            showError("Impossible de lire ce fichier", e);
         }
     }
 
     private void playNetwork(String url, String title, String subtitle) {
         releasePlayer();
         view.setTitleText(title, subtitle);
-        view.setStatus("CONNEXION…");
-        log("Connexion radio : " + url);
+        view.setStatus("CONNEXION RADIO…");
 
         try {
-            MediaPlayer p = new MediaPlayer();
-            configurePlayer(p, title);
-            p.setDataSource(url);
-            player = p;
-            p.prepareAsync();
+            MediaPlayer next = new MediaPlayer();
+            configurePlayer(next, title);
+            next.setDataSource(url);
+            player = next;
+            next.prepareAsync();
         } catch (Exception e) {
-            fail("RADIO", e);
+            showError("Impossible de lire cette radio", e);
         }
     }
 
@@ -262,39 +269,74 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                 .build());
 
+        try {
+            p.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK);
+        } catch (Exception ignored) {}
+
         p.setOnPreparedListener(mp -> {
-            log("Média préparé");
-            android.util.Log.i("NEXUS_SAFE", "MEDIA_PREPARED " + title);
+            if (!requestAudioFocus()) {
+                view.setStatus("FOCUS AUDIO REFUSÉ");
+                return;
+            }
             try {
                 mp.start();
                 view.setPlaying(true);
                 view.setStatus("LECTURE ACTIVE");
-                log("PLAYING : " + title);
             } catch (Exception e) {
-                fail("START", e);
+                showError("Démarrage audio impossible", e);
             }
         });
 
         p.setOnCompletionListener(mp -> {
             view.setPlaying(false);
             view.setStatus("TERMINÉ");
-            log("Fin de lecture");
+        });
+
+        p.setOnBufferingUpdateListener((mp, percent) -> {
+            if (percent > 0 && percent < 100) {
+                view.setStatus("BUFFER " + percent + "%");
+            }
         });
 
         p.setOnErrorListener((mp, what, extra) -> {
             view.setPlaying(false);
-            String message = "MediaPlayer what=" + what + " extra=" + extra;
+            String message = "Erreur audio Android " + what + "/" + extra;
             view.setStatus("ERREUR AUDIO");
-            log(message);
-            android.util.Log.e("NEXUS_SAFE", message);
             Toast.makeText(this, message, Toast.LENGTH_LONG).show();
             return true;
         });
+    }
 
-        p.setOnInfoListener((mp, what, extra) -> {
-            log("Info MediaPlayer " + what + "/" + extra);
-            return false;
-        });
+    private boolean requestAudioFocus() {
+        if (audioManager == null) return true;
+        int result;
+        if (Build.VERSION.SDK_INT >= 26) {
+            result = audioManager.requestAudioFocus(focusRequest);
+        } else {
+            result = audioManager.requestAudioFocus(
+                    focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+        }
+        return result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+    }
+
+    private void abandonAudioFocus() {
+        if (audioManager == null) return;
+        try {
+            if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) {
+                audioManager.abandonAudioFocusRequest(focusRequest);
+            } else {
+                audioManager.abandonAudioFocus(focusListener);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void pausePlayback() {
+        if (player == null) return;
+        try {
+            if (player.isPlaying()) player.pause();
+        } catch (Exception ignored) {}
+        view.setPlaying(false);
+        view.setStatus("PAUSE");
     }
 
     private void releasePlayer() {
@@ -304,84 +346,106 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
             try { old.reset(); } catch (Exception ignored) {}
             try { old.release(); } catch (Exception ignored) {}
         }
-        if (view != null) view.setPlaying(false);
+        abandonAudioFocus();
+        if (view != null) {
+            view.setPlaying(false);
+            view.setProgress(0f, 0L, 0L);
+        }
+    }
+
+    private void updateProgress() {
+        if (player == null) return;
+        try {
+            int position = player.getCurrentPosition();
+            int duration = player.getDuration();
+            float progress = duration > 0 ? (float) position / duration : 0f;
+            view.setProgress(progress, position, duration);
+        } catch (Exception ignored) {}
     }
 
     private void searchRadios(String query) {
         view.setStatus("RECHERCHE RADIO…");
-        log("Recherche : " + (query.isEmpty() ? "populaires" : query));
-
         network.execute(() -> {
-            Exception last = null;
+            List<Station> stations = new ArrayList<>();
+            Set<String> seen = new HashSet<>();
+            String[] fields = query.isEmpty()
+                    ? new String[]{"popular"}
+                    : new String[]{"name", "country", "tag"};
 
+            outer:
             for (String base : RADIO_APIS) {
-                HttpURLConnection connection = null;
-                try {
-                    String endpoint = query.isEmpty()
-                            ? base + "/json/stations/topvote/30?hidebroken=true"
-                            : base + "/json/stations/search?hidebroken=true&limit=30&order=votes&reverse=true&name="
-                            + Uri.encode(query);
+                for (String field : fields) {
+                    HttpURLConnection connection = null;
+                    try {
+                        String endpoint;
+                        if ("popular".equals(field)) {
+                            endpoint = base + "/json/stations/topvote/40?hidebroken=true";
+                        } else {
+                            endpoint = base
+                                    + "/json/stations/search?hidebroken=true&order=votes&reverse=true&limit=30&"
+                                    + field + "=" + Uri.encode(query);
+                        }
 
-                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
-                    connection.setConnectTimeout(7000);
-                    connection.setReadTimeout(9000);
-                    connection.setRequestProperty("User-Agent", "NEXUS-MUSIC/2.1 Android");
-                    connection.setRequestProperty("Accept", "application/json");
+                        connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                        connection.setConnectTimeout(5000);
+                        connection.setReadTimeout(7000);
+                        connection.setRequestProperty("User-Agent", "NEXUS-MUSIC/3.0 Android");
+                        connection.setRequestProperty("Accept", "application/json");
 
-                    int code = connection.getResponseCode();
-                    if (code < 200 || code >= 300) throw new Exception("HTTP " + code);
+                        if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300) {
+                            continue;
+                        }
 
-                    StringBuilder body = new StringBuilder();
-                    try (BufferedReader reader = new BufferedReader(
-                            new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-                        String line;
-                        while ((line = reader.readLine()) != null) body.append(line);
+                        StringBuilder body = new StringBuilder();
+                        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                                connection.getInputStream(), StandardCharsets.UTF_8))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) body.append(line);
+                        }
+
+                        JSONArray array = new JSONArray(body.toString());
+                        for (int i = 0; i < array.length() && stations.size() < 30; i++) {
+                            JSONObject o = array.optJSONObject(i);
+                            if (o == null) continue;
+
+                            String stream = o.optString(
+                                    "url_resolved", o.optString("url", "")).trim();
+                            if (!(stream.startsWith("https://") || stream.startsWith("http://"))) {
+                                continue;
+                            }
+                            if (!seen.add(stream)) continue;
+
+                            stations.add(new Station(
+                                    o.optString("name", "Radio").trim(),
+                                    stream,
+                                    o.optString("country", "").trim(),
+                                    o.optString("codec", "").trim(),
+                                    o.optInt("bitrate", 0)));
+                        }
+
+                        if (stations.size() >= 12) break outer;
+                    } catch (Exception ignored) {
+                    } finally {
+                        if (connection != null) connection.disconnect();
                     }
-
-                    JSONArray array = new JSONArray(body.toString());
-                    List<Station> stations = new ArrayList<>();
-
-                    for (int i = 0; i < array.length() && stations.size() < 20; i++) {
-                        JSONObject o = array.optJSONObject(i);
-                        if (o == null) continue;
-
-                        String url = o.optString("url_resolved",
-                                o.optString("url", "")).trim();
-                        if (!(url.startsWith("https://") || url.startsWith("http://"))) continue;
-
-                        stations.add(new Station(
-                                o.optString("name", "Radio").trim(),
-                                url,
-                                o.optString("country", "").trim(),
-                                o.optString("codec", "").trim(),
-                                o.optInt("bitrate", 0)));
-                    }
-
-                    if (!stations.isEmpty()) {
-                        runOnUiThread(() -> showStations(stations));
-                        return;
-                    }
-                } catch (Exception e) {
-                    last = e;
-                } finally {
-                    if (connection != null) connection.disconnect();
                 }
             }
 
-            Exception error = last;
             runOnUiThread(() -> {
-                view.setStatus("RADIO INDISPONIBLE");
-                fail("RADIO DIRECTORY",
-                        error == null ? new Exception("aucun résultat") : error);
+                if (stations.isEmpty()) {
+                    view.setStatus("AUCUNE RADIO");
+                    Toast.makeText(this,
+                            "Aucune station trouvée. Essaie un autre mot ou une URL directe.",
+                            Toast.LENGTH_LONG).show();
+                } else {
+                    showStations(stations);
+                }
             });
         });
     }
 
     private void showStations(List<Station> stations) {
         view.setStatus("RADIOS TROUVÉES");
-        log(stations.size() + " stations trouvées");
-        android.util.Log.i("NEXUS_SAFE", "RADIO_PASS " + stations.size());
-
         String[] labels = new String[stations.size()];
         for (int i = 0; i < stations.size(); i++) labels[i] = stations.get(i).label();
 
@@ -395,17 +459,12 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
                 .show();
     }
 
-    private void fail(String area, Exception e) {
-        String message = area + " : " + e.getClass().getSimpleName()
-                + (e.getMessage() == null ? "" : " - " + e.getMessage());
+    private void showError(String prefix, Exception e) {
+        view.setPlaying(false);
         view.setStatus("ERREUR");
-        log(message);
-        android.util.Log.e("NEXUS_SAFE", message);
+        String detail = e.getMessage();
+        String message = prefix + (detail == null || detail.isEmpty() ? "" : " : " + detail);
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-    }
-
-    private void log(String text) {
-        view.appendLog(text);
     }
 
     private String displayName(Uri uri) {
@@ -447,7 +506,7 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
             if (!country.isEmpty()) s.append(country);
             if (!codec.isEmpty()) {
                 if (s.length() > 0) s.append(" • ");
-                s.append(codec);
+                s.append(codec.toUpperCase(Locale.US));
             }
             if (bitrate > 0) {
                 if (s.length() > 0) s.append(" • ");
