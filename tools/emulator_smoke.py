@@ -18,7 +18,7 @@ def clear():
     time.sleep(0.4)
 
 def logs():
-    return adb("logcat","-d","-s","NEXUS_SAFE:I","NEXUS_SAFE:E")
+    return adb("logcat","-d","-s","NEXUS_SAFE:V")
 
 Path("test-results").mkdir(exist_ok=True)
 
