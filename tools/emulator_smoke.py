@@ -76,9 +76,11 @@ require("IMPORTER UN FICHIER AUDIO")
 require("TEST AUDIO INTERNE")
 
 tap("TEST AUDIO INTERNE")
-wait_require("NEXUS Audio Test")
-wait_require("LECTURE ACTIVE")
+time.sleep(2.0)
+audio_logs = adb("logcat", "-d", "-s", "NEXUS_AUDIO:I")
+assert "PLAYING" in audio_logs, "ExoPlayer never entered PLAYING state"
 print("PASS ExoPlayer entered active playback state", flush=True)
+time.sleep(4.5)
 
 tap("IMPORTER UN FICHIER AUDIO")
 time.sleep(1.5)
