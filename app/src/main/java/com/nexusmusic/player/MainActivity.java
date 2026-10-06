@@ -36,6 +36,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -226,6 +229,78 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
         } catch (RuntimeException e) {
             return "Android Audio";
         }
+    }
+
+    @Override
+    public void onTestAudio() {
+        if (controller == null) {
+            Toast.makeText(this, "Le moteur audio démarre…", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        view.setStatus("TEST AUDIO…");
+        network.execute(() -> {
+            try {
+                File file = new File(getCacheDir(), "nexus-audio-test.wav");
+                writeTestWav(file);
+                runOnUiThread(() -> {
+                    play(Uri.fromFile(file), "NEXUS Audio Test",
+                            "440 Hz • PCM 16-bit / 44.1 kHz");
+                    view.showHome();
+                });
+            } catch (IOException e) {
+                runOnUiThread(() -> {
+                    view.setStatus("ERREUR TEST AUDIO");
+                    Toast.makeText(this, "Impossible de créer le test audio.", Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private static void writeTestWav(File file) throws IOException {
+        final int sampleRate = 44100;
+        final int channels = 2;
+        final int bits = 16;
+        final int seconds = 2;
+        final int frames = sampleRate * seconds;
+        final int blockAlign = channels * bits / 8;
+        final int dataSize = frames * blockAlign;
+        final int byteRate = sampleRate * blockAlign;
+
+        try (FileOutputStream out = new FileOutputStream(file)) {
+            out.write(new byte[]{'R','I','F','F'});
+            writeIntLE(out, 36 + dataSize);
+            out.write(new byte[]{'W','A','V','E','f','m','t',' '});
+            writeIntLE(out, 16);
+            writeShortLE(out, 1);
+            writeShortLE(out, channels);
+            writeIntLE(out, sampleRate);
+            writeIntLE(out, byteRate);
+            writeShortLE(out, blockAlign);
+            writeShortLE(out, bits);
+            out.write(new byte[]{'d','a','t','a'});
+            writeIntLE(out, dataSize);
+
+            for (int i = 0; i < frames; i++) {
+                double envelope = Math.min(1.0, i / 2205.0) *
+                        Math.min(1.0, (frames - i) / 2205.0);
+                short sample = (short) (Math.sin(2.0 * Math.PI * 440.0 * i / sampleRate)
+                        * 0.22 * envelope * Short.MAX_VALUE);
+                writeShortLE(out, sample);
+                writeShortLE(out, sample);
+            }
+        }
+    }
+
+    private static void writeIntLE(FileOutputStream out, int value) throws IOException {
+        out.write(value & 0xFF);
+        out.write((value >>> 8) & 0xFF);
+        out.write((value >>> 16) & 0xFF);
+        out.write((value >>> 24) & 0xFF);
+    }
+
+    private static void writeShortLE(FileOutputStream out, int value) throws IOException {
+        out.write(value & 0xFF);
+        out.write((value >>> 8) & 0xFF);
     }
 
     @Override
