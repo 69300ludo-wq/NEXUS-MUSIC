@@ -38,11 +38,13 @@ clear()
 out=adb("shell","am","start","-W","-n",ACTIVITY,"--ez","self_test_radio","true")
 assert "Status: ok" in out
 radio=""
-for _ in range(12):
+for _ in range(60):
     time.sleep(1)
     radio=logs()
     if "RADIO_PASS" in radio:
         break
+if "RADIO_PASS" not in radio:
+    print("RADIO LOGS:", radio, flush=True)
 assert "RADIO_PASS" in radio, "Radio Browser did not return stations"
 print("PASS in-app radio directory",flush=True)
 
