@@ -55,7 +55,11 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
     private static final String LAST_URL = "last_radio_url";
     private static final String LAST_NAME = "last_radio_name";
     private static final String LAST_SUB = "last_radio_subtitle";
-    private static final String RADIO_API = "https://de1.api.radio-browser.info";
+    private static final String[] RADIO_APIS = {
+            "https://de1.api.radio-browser.info",
+            "https://nl1.api.radio-browser.info",
+            "https://at1.api.radio-browser.info"
+    };
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService network = Executors.newSingleThreadExecutor();
@@ -357,52 +361,60 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
     private void searchRadios(String query, String field) {
         view.setStatus("RECHERCHE RADIO…");
         network.execute(() -> {
-            HttpURLConnection c = null;
-            try {
-                String endpoint = query.isEmpty()
-                        ? RADIO_API + "/json/stations/topvote/40?hidebroken=true"
-                        : RADIO_API + "/json/stations/search?hidebroken=true&order=votes&reverse=true&limit=40&is_https=true&" + field + "=" + Uri.encode(query);
-                c = (HttpURLConnection) new URL(endpoint).openConnection();
-                c.setConnectTimeout(8000);
-                c.setReadTimeout(10000);
-                c.setRequestProperty("User-Agent", "NEXUS-MUSIC/0.1 Android");
-                c.setRequestProperty("Accept", "application/json");
-                if (c.getResponseCode() < 200 || c.getResponseCode() >= 300) {
-                    throw new IllegalStateException("HTTP");
-                }
+            Exception lastError = null;
+            for (String base : RADIO_APIS) {
+                HttpURLConnection connection = null;
+                try {
+                    String endpoint = query.isEmpty()
+                            ? base + "/json/stations/topvote/40?hidebroken=true"
+                            : base + "/json/stations/search?hidebroken=true&order=votes&reverse=true&limit=40&is_https=true&"
+                            + field + "=" + Uri.encode(query);
+                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                    connection.setConnectTimeout(6500);
+                    connection.setReadTimeout(8500);
+                    connection.setRequestProperty("User-Agent", "NEXUS-MUSIC/1.0.1 Android");
+                    connection.setRequestProperty("Accept", "application/json");
+                    int code = connection.getResponseCode();
+                    if (code < 200 || code >= 300) throw new IllegalStateException("HTTP " + code);
 
-                StringBuilder body = new StringBuilder();
-                try (BufferedReader r = new BufferedReader(
-                        new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = r.readLine()) != null) body.append(line);
-                }
+                    StringBuilder body = new StringBuilder();
+                    try (BufferedReader r = new BufferedReader(
+                            new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = r.readLine()) != null) body.append(line);
+                    }
 
-                JSONArray array = new JSONArray(body.toString());
-                List<Station> stations = new ArrayList<>();
-                for (int i = 0; i < array.length() && stations.size() < 24; i++) {
-                    JSONObject o = array.optJSONObject(i);
-                    if (o == null) continue;
-                    String url = o.optString("url_resolved", o.optString("url", "")).trim();
-                    if (!url.startsWith("https://")) continue;
-                    stations.add(new Station(
-                            o.optString("name", "Radio").trim(),
-                            url,
-                            o.optString("country", "").trim(),
-                            o.optString("codec", "").trim(),
-                            o.optInt("bitrate", 0)));
+                    JSONArray array = new JSONArray(body.toString());
+                    List<Station> stations = new ArrayList<>();
+                    for (int i = 0; i < array.length() && stations.size() < 24; i++) {
+                        JSONObject o = array.optJSONObject(i);
+                        if (o == null) continue;
+                        String url = o.optString("url_resolved", o.optString("url", "")).trim();
+                        if (!url.startsWith("https://")) continue;
+                        stations.add(new Station(
+                                o.optString("name", "Radio").trim(),
+                                url,
+                                o.optString("country", "").trim(),
+                                o.optString("codec", "").trim(),
+                                o.optInt("bitrate", 0)));
+                    }
+                    List<Station> result = stations;
+                    runOnUiThread(() -> showStations(result));
+                    return;
+                } catch (Exception e) {
+                    lastError = e;
+                } finally {
+                    if (connection != null) connection.disconnect();
                 }
-                runOnUiThread(() -> showStations(stations));
-            } catch (Exception e) {
-                runOnUiThread(() -> {
-                    view.setStatus("RADIO DIRECTORY OFFLINE");
-                    Toast.makeText(this,
-                            "Annuaire radio indisponible. Tu peux ajouter une URL directe.",
-                            Toast.LENGTH_LONG).show();
-                });
-            } finally {
-                if (c != null) c.disconnect();
             }
+
+            Exception error = lastError;
+            runOnUiThread(() -> {
+                view.setStatus("RADIO DIRECTORY OFFLINE");
+                Toast.makeText(this,
+                        "Annuaire radio indisponible. Réessaie ou utilise une URL HTTPS directe.",
+                        Toast.LENGTH_LONG).show();
+            });
         });
     }
 
