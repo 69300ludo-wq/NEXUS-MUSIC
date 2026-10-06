@@ -261,7 +261,8 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
                 writeTestWav(file);
                 runOnUiThread(() -> {
                     play(Uri.fromFile(file), "NEXUS Audio Test",
-                            "440 Hz • PCM 16-bit / 44.1 kHz");
+                            "440 Hz • PCM 16-bit / 44.1 kHz • Pause pour arrêter");
+                    if (player != null) player.setRepeatMode(Player.REPEAT_MODE_ONE);
                     view.showHome();
                 });
             } catch (IOException e) {
@@ -418,6 +419,7 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
 
     private void play(Uri uri, String title, String subtitle) {
         if (player == null) return;
+        player.setRepeatMode(Player.REPEAT_MODE_OFF);
         MediaMetadata metadata = new MediaMetadata.Builder()
                 .setTitle(title)
                 .setArtist(subtitle)
