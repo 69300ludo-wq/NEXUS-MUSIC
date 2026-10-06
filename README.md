@@ -1,37 +1,40 @@
-# NEXUS MUSIC
+# NEXUS MUSIC 1.0.0
 
 Lecteur audio Android futuriste, sans publicité et orienté haute fidélité.
 
-## Disponible dans la base actuelle
+## Version finale 1.0
 
-- Interface NEXUS sombre, holographique et animée
-- Aucun prénom affiché
-- Lecture de fichiers audio locaux via Android Storage Access Framework
-- Lecture en arrière-plan avec AndroidX Media3 / ExoPlayer
-- Radio Internet par URL HTTPS
-- Recherche de radios via Radio Browser
-- Reprise de la dernière station
-- Affichage du format, de la fréquence d'échantillonnage, des canaux et de la sortie audio lorsque Android expose ces informations
-- Détection de sorties comme Bluetooth, USB DAC, casque filaire, HDMI et haut-parleur
-- GitHub Actions pour compiler automatiquement l'APK debug
+Fonctions actives :
+- interface NEXUS holographique / cockpit
+- aucun prénom affiché
+- lecture de fichiers audio locaux
+- lecture en arrière-plan avec AndroidX Media3 / ExoPlayer
+- radio Internet mondiale via flux HTTPS et Radio Browser
+- recherche radio par station, pays et genre
+- reprise de la dernière station
+- affichage du format audio, fréquence d'échantillonnage et canaux lorsque disponibles
+- détection de la route audio Android : Bluetooth, USB DAC, casque filaire, HDMI ou haut-parleur
+- contrôles lecture / pause / position
+- Audio Lab avec diagnostic de la chaîne audio
+- aucune publicité
 
-## Audio Lab — roadmap
+## Audio Lab — fonctions avancées non simulées
 
-Ces fonctions sont prévues mais ne sont pas faussement annoncées comme actives tant qu'elles ne sont pas réellement implémentées et validées :
-
-- égaliseur paramétrique 20 bandes
-- DSP interne haute précision
+Ces fonctions restent affichées comme ROADMAP tant qu'elles ne sont pas réellement implémentées et validées :
+- égaliseur paramétrique 20 bandes natif
 - convolver FIR
-- profils de correction casque
-- gestion avancée USB DAC / Hi-Res
-- DSD lorsque la chaîne matérielle le permet
-- mode bit-perfect lorsqu'Android et le périphérique de sortie le permettent
-- audio spatial et profils d'écoute
+- correction casque
+- chemin USB DAC exclusif
+- DSD natif
+- bit-perfect garanti
+- spatialisation avancée
 
-Le moteur pourra accepter des sources très haute résolution, mais la fréquence et la profondeur réellement délivrées dépendent toujours du téléphone, d'Android et du DAC.
+NEXUS MUSIC ne prétend pas fournir une capacité que le téléphone, Android ou le DAC ne permettent pas réellement.
 
 ## Build
 
-Le workflow **Android APK** compile le projet à chaque push sur `main` et publie l'APK debug comme artifact GitHub Actions.
+La pipeline **NEXUS MUSIC Final** construit une variante Android `release`, vérifie l'APK avec les outils Android et publie :
+- `NEXUS-MUSIC-v1.0.0-FINAL.apk`
+- son SHA-256
 
 Base technique : Java 17, Android API 36, AndroidX Media3.
