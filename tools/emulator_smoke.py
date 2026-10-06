@@ -15,8 +15,14 @@ def adb(*args, timeout=60):
 
 def hierarchy():
     time.sleep(1.1)
-    adb("shell", "uiautomator", "dump", "/sdcard/nexus-ui.xml", timeout=90)
-    return ET.fromstring(adb("shell", "cat", "/sdcard/nexus-ui.xml"))
+    messages = []
+    for i in range(3):
+        result = adb("shell", "uiautomator", "dump", "--compressed", "/sdcard/nexus-ui.xml", timeout=90)
+        messages.append(result.strip())
+        if "dumped to" in result:
+            return ET.fromstring(adb("shell", "cat", "/sdcard/nexus-ui.xml"))
+        time.sleep(2)
+    raise AssertionError("UI hierarchy unavailable: " + " | ".join(messages))
 
 def require(label):
     root = hierarchy()
