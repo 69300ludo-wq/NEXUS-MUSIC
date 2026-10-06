@@ -195,6 +195,10 @@ public final class NexusMusicView extends LinearLayout {
         orb.setVisibility(lab ? GONE : VISIBLE);
         title.setVisibility(lab ? GONE : VISIBLE);
         subtitle.setVisibility(lab ? GONE : VISIBLE);
+        sectionInfo.getLayoutParams().height = lab ? dp(186) : dp(28);
+        sectionInfo.setGravity(lab ? Gravity.TOP | Gravity.CENTER_HORIZONTAL : Gravity.CENTER);
+        sectionInfo.setTextSize(lab ? 11 : 10);
+        sectionInfo.requestLayout();
 
         if (screen == Screen.HOME) {
             sectionTitle.setText("QUANTUM PLAYER");
