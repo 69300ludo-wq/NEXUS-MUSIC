@@ -2,20 +2,20 @@ package com.nexusmusic.player;
 
 import android.content.Context;
 import android.content.res.ColorStateList;
-import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.text.method.ScrollingMovementMethod;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.FrameLayout;
+import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.SeekBar;
-import android.widget.Space;
 import android.widget.TextView;
 
 import java.util.Locale;
 
-public final class NexusMusicView extends FrameLayout {
+public final class NexusMusicView extends ScrollView {
     public interface Actions {
         void onPickLocalAudio();
         void onBrowseRadios();
@@ -27,311 +27,237 @@ public final class NexusMusicView extends FrameLayout {
         void onTestAudio();
     }
 
-    private enum Screen { HOME, RADIO, LAB }
-
-    private static final int CYAN=0xFF63F7FF, BLUE=0xFF5188FF, VIOLET=0xFFAD63FF,
-            PINK=0xFFF45AFF, WHITE=0xFFF1FBFF, MUTED=0xFF829AB2;
+    private static final int BG = 0xFF02040A;
+    private static final int PANEL = 0xFF0A1222;
+    private static final int CYAN = 0xFF63F7FF;
+    private static final int VIOLET = 0xFFAD63FF;
+    private static final int WHITE = 0xFFF1FBFF;
+    private static final int MUTED = 0xFF8CA5BA;
+    private static final int DANGER = 0xFFFF6B8A;
 
     private Actions actions;
-    private Screen screen=Screen.HOME;
-    private boolean playing;
-    private long positionMs,durationMs;
-
-    private final NexusHudBackdrop hud;
-    private final OrbView orb;
-    private final TextView coreLabel,title,subtitle,status,signal,route;
-    private final TextView primary,secondary,third,play,time,sectionInfo;
-    private final LinearLayout actionArea,labArea;
+    private final TextView title;
+    private final TextView subtitle;
+    private final TextView status;
+    private final TextView log;
+    private final Button play;
+    private final Button resume;
     private final SeekBar seek;
+    private final TextView time;
 
-    public NexusMusicView(Context c){
-        super(c);
-        setMinimumHeight(dp(680));
+    public NexusMusicView(Context context) {
+        super(context);
+        setFillViewport(true);
+        setVerticalScrollBarEnabled(false);
+        setBackgroundColor(BG);
 
-        hud=new NexusHudBackdrop(c);
-        addView(hud,new LayoutParams(-1,-1));
+        LinearLayout root = new LinearLayout(context);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(18), dp(16), dp(24));
+        addView(root, new LayoutParams(-1, -2));
 
-        LinearLayout root=column();
-        root.setPadding(dp(14),dp(14),dp(14),dp(14));
-        addView(root,new LayoutParams(-1,-2));
+        TextView logo = text("NEXUS MUSIC", 28, WHITE, true);
+        logo.setShadowLayer(dp(14), 0, 0, CYAN);
+        root.addView(logo, new LinearLayout.LayoutParams(-1, dp(42)));
 
-        LinearLayout head=row();
-        LinearLayout brand=column();
-        TextView logo=text("NEXUS",28,WHITE,true);
-        logo.setShadowLayer(dp(16),0,0,CYAN);
-        brand.addView(logo,new LinearLayout.LayoutParams(-1,dp(36)));
-        brand.addView(text("MUSIC // HOLOGRAPHIC AUDIO SYSTEM",8,CYAN,false),
-                new LinearLayout.LayoutParams(-1,dp(18)));
-        head.addView(brand,new LinearLayout.LayoutParams(0,dp(58),1f));
+        TextView version = text("CORE RECOVERY 2.0 // ANDROID NATIVE AUDIO", 9, CYAN, true);
+        root.addView(version, new LinearLayout.LayoutParams(-1, dp(24)));
 
-        TextView hiRes=text("●  CORE ONLINE",8,CYAN,true);
-        hiRes.setGravity(Gravity.CENTER);
-        hiRes.setBackground(glass(CYAN,0x16173C48,16));
-        head.addView(hiRes,new LinearLayout.LayoutParams(dp(112),dp(34)));
-        root.addView(head);
+        TextView core = text("NEXUS CORE", 13, CYAN, true);
+        core.setGravity(Gravity.CENTER);
+        core.setBackground(panel(CYAN));
+        root.addView(core, lp(dp(58), 0, dp(12)));
 
-        LinearLayout nav=row();
-        nav.addView(tab("MUSIQUE",Screen.HOME),new LinearLayout.LayoutParams(0,dp(40),1f));
-        nav.addView(gap(6),new LinearLayout.LayoutParams(dp(6),1));
-        nav.addView(tab("RADIO",Screen.RADIO),new LinearLayout.LayoutParams(0,dp(40),1f));
-        nav.addView(gap(6),new LinearLayout.LayoutParams(dp(6),1));
-        nav.addView(tab("AUDIO LAB",Screen.LAB),new LinearLayout.LayoutParams(0,dp(40),1f));
-        root.addView(nav);
-
-        FrameLayout cockpit=new FrameLayout(c);
-        cockpit.setMinimumHeight(dp(180));
-        root.addView(cockpit,new LinearLayout.LayoutParams(-1,dp(180)));
-
-        TextView leftHud=miniPanel("SOURCE\nAUTO DETECT",CYAN);
-        FrameLayout.LayoutParams lpL=new FrameLayout.LayoutParams(dp(78),dp(44),Gravity.LEFT|Gravity.TOP);
-        lpL.setMargins(dp(0),dp(24),0,0);
-        cockpit.addView(leftHud,lpL);
-
-        TextView rightHud=miniPanel("OUTPUT\nLIVE ROUTE",VIOLET);
-        FrameLayout.LayoutParams lpR=new FrameLayout.LayoutParams(dp(78),dp(44),Gravity.RIGHT|Gravity.TOP);
-        lpR.setMargins(0,dp(24),dp(0),0);
-        cockpit.addView(rightHud,lpR);
-
-        orb=new OrbView(c);
-        FrameLayout.LayoutParams orbLp=new FrameLayout.LayoutParams(dp(160),dp(160),Gravity.CENTER);
-        cockpit.addView(orb,orbLp);
-
-        coreLabel=text("NEXUS CORE // QUANTUM FIELD",8,CYAN,true);
-        coreLabel.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams coreLp=new FrameLayout.LayoutParams(dp(210),dp(24),Gravity.CENTER_HORIZONTAL|Gravity.BOTTOM);
-        coreLp.setMargins(0,0,0,dp(2));
-        cockpit.addView(coreLabel,coreLp);
-
-        TextView dsp=miniPanel("DSP\nROADMAP",PINK);
-        FrameLayout.LayoutParams dspLp=new FrameLayout.LayoutParams(dp(72),dp(42),Gravity.LEFT|Gravity.BOTTOM);
-        dspLp.setMargins(dp(2),0,0,dp(2));
-        cockpit.addView(dsp,dspLp);
-
-        TextView path=miniPanel("SIGNAL\nTRANSPARENT",BLUE);
-        FrameLayout.LayoutParams pathLp=new FrameLayout.LayoutParams(dp(78),dp(42),Gravity.RIGHT|Gravity.BOTTOM);
-        pathLp.setMargins(0,0,dp(2),dp(2));
-        cockpit.addView(path,pathLp);
-
-        title=text("Aucun morceau",21,WHITE,true);
+        title = text("Aucun média chargé", 20, WHITE, true);
         title.setGravity(Gravity.CENTER);
-        title.setSingleLine(true);
-        root.addView(title,new LinearLayout.LayoutParams(-1,dp(30)));
+        root.addView(title, new LinearLayout.LayoutParams(-1, dp(38)));
 
-        subtitle=text("Importe un fichier ou ouvre la Radio",10,CYAN,false);
+        subtitle = text("Commence par TEST AUDIO INTERNE", 10, MUTED, false);
         subtitle.setGravity(Gravity.CENTER);
-        subtitle.setSingleLine(true);
-        root.addView(subtitle,new LinearLayout.LayoutParams(-1,dp(22)));
+        root.addView(subtitle, new LinearLayout.LayoutParams(-1, dp(30)));
 
-        LinearLayout diag=row();
-        diag.setPadding(dp(12),dp(6),dp(12),dp(6));
-        diag.setBackground(glass(CYAN,0x14122A3E,16));
+        status = text("PRÊT", 11, CYAN, true);
+        status.setGravity(Gravity.CENTER);
+        status.setBackground(panel(VIOLET));
+        root.addView(status, lp(dp(46), dp(2), dp(12)));
 
-        LinearLayout dleft=column();
-        signal=text("Format en attente",9,CYAN,true);
-        status=text("AUDIO CORE READY",8,WHITE,false);
-        dleft.addView(signal,new LinearLayout.LayoutParams(-1,dp(22)));
-        dleft.addView(status,new LinearLayout.LayoutParams(-1,dp(20)));
-        diag.addView(dleft,new LinearLayout.LayoutParams(0,dp(44),1f));
+        Button test = button("1  •  TEST AUDIO INTERNE", CYAN);
+        test.setOnClickListener(v -> {
+            if (actions != null) actions.onTestAudio();
+        });
+        root.addView(test, lp(dp(54), dp(6), dp(4)));
 
-        route=text("Android Audio",8,MUTED,false);
-        route.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
-        diag.addView(route,new LinearLayout.LayoutParams(0,dp(44),1f));
-        root.addView(diag,new LinearLayout.LayoutParams(-1,dp(48)));
+        Button choose = button("2  •  CHOISIR UNE MUSIQUE", VIOLET);
+        choose.setOnClickListener(v -> {
+            if (actions != null) actions.onPickLocalAudio();
+        });
+        root.addView(choose, lp(dp(54), dp(4), dp(4)));
 
-        root.addView(gap(8),new LinearLayout.LayoutParams(1,dp(8)));
+        LinearLayout transport = row();
+        transport.setBackground(panel(CYAN));
 
-        LinearLayout transport=column();
-        transport.setPadding(dp(10),dp(6),dp(10),dp(8));
-        transport.setBackground(glass(VIOLET,0x5510182E,20));
+        play = button("▶  PLAY / PAUSE", CYAN);
+        play.setOnClickListener(v -> {
+            if (actions != null) actions.onTogglePlayPause();
+        });
+        transport.addView(play, new LinearLayout.LayoutParams(0, dp(50), 1f));
 
-        seek=new SeekBar(c);
+        time = text("0:00 / 0:00", 9, MUTED, true);
+        time.setGravity(Gravity.CENTER);
+        transport.addView(time, new LinearLayout.LayoutParams(dp(100), dp(50)));
+
+        root.addView(transport, lp(dp(58), dp(4), dp(2)));
+
+        seek = new SeekBar(context);
         seek.setMax(1000);
         seek.setProgressTintList(ColorStateList.valueOf(CYAN));
         seek.setThumbTintList(ColorStateList.valueOf(VIOLET));
-        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             boolean user;
-            public void onProgressChanged(SeekBar s,int p,boolean f){user=f;}
-            public void onStartTrackingTouch(SeekBar s){user=true;}
-            public void onStopTrackingTouch(SeekBar s){
-                if(user&&actions!=null) actions.onSeekTo(s.getProgress()/1000f);
-                user=false;
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                user = fromUser;
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) {
+                user = true;
+            }
+            @Override public void onStopTrackingTouch(SeekBar bar) {
+                if (user && actions != null) {
+                    actions.onSeekTo(bar.getProgress() / 1000f);
+                }
+                user = false;
             }
         });
-        transport.addView(seek,new LinearLayout.LayoutParams(-1,dp(28)));
+        root.addView(seek, lp(dp(42), 0, dp(10)));
 
-        LinearLayout controls=row();
-        time=text("0:00   //   LIVE",8,MUTED,false);
-        controls.addView(time,new LinearLayout.LayoutParams(0,dp(44),1f));
+        TextView radioTitle = text("RADIO", 16, WHITE, true);
+        radioTitle.setGravity(Gravity.CENTER);
+        root.addView(radioTitle, new LinearLayout.LayoutParams(-1, dp(34)));
 
-        play=text("▶",20,WHITE,true);
-        play.setGravity(Gravity.CENTER);
-        play.setBackground(glass(CYAN,0x24133446,24));
-        play.setOnClickListener(v->{if(actions!=null)actions.onTogglePlayPause();});
-        controls.addView(play,new LinearLayout.LayoutParams(dp(72),dp(44)));
-
-        TextView media=text("MEDIA3\nENGINE",7,CYAN,true);
-        media.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
-        controls.addView(media,new LinearLayout.LayoutParams(0,dp(44),1f));
-        transport.addView(controls);
-        root.addView(transport,new LinearLayout.LayoutParams(-1,dp(70)));
-
-        root.addView(gap(10),new LinearLayout.LayoutParams(1,dp(10)));
-
-        sectionInfo=text("PLAYER // LOCAL HIGH FIDELITY",9,CYAN,true);
-        sectionInfo.setGravity(Gravity.CENTER);
-        root.addView(sectionInfo,new LinearLayout.LayoutParams(-1,dp(22)));
-
-        actionArea=column();
-        primary=action("＋  IMPORTER UN FICHIER AUDIO",CYAN);
-        secondary=action("◎  EXPLORER LES RADIOS DU MONDE",PINK);
-        third=action("＋  AJOUTER UNE URL DIRECTE",VIOLET);
-        primary.setOnClickListener(v->{
-            if(actions==null)return;
-            if(screen==Screen.HOME)actions.onPickLocalAudio();
-            else if(screen==Screen.RADIO)actions.onBrowseRadios();
+        Button search = button("3  •  RECHERCHER UNE RADIO", CYAN);
+        search.setOnClickListener(v -> {
+            if (actions != null) actions.onBrowseRadios();
         });
-        secondary.setOnClickListener(v->{if(actions==null)return;if(screen==Screen.HOME)actions.onTestAudio();else if(screen==Screen.RADIO)actions.onAddRadio();});
-        third.setOnClickListener(v->{if(actions!=null&&screen==Screen.RADIO)actions.onResumeLastRadio();});
-        actionArea.addView(primary,new LinearLayout.LayoutParams(-1,dp(44)));
-        actionArea.addView(gap(6),new LinearLayout.LayoutParams(1,dp(6)));
-        actionArea.addView(secondary,new LinearLayout.LayoutParams(-1,dp(44)));
-        actionArea.addView(gap(6),new LinearLayout.LayoutParams(1,dp(6)));
-        actionArea.addView(third,new LinearLayout.LayoutParams(-1,dp(44)));
-        root.addView(actionArea);
+        root.addView(search, lp(dp(52), dp(3), dp(4)));
 
-        labArea=column();
-        labArea.addView(labRow("PURE AUDIO","READY // MEDIA3 DIRECT PATH",CYAN));
-        labArea.addView(labRow("EQ PARAMÉTRIQUE 20 BANDES","ROADMAP // DSP NATIF",VIOLET));
-        labArea.addView(labRow("CONVOLVER FIR","ROADMAP // HEADPHONE CORRECTION",PINK));
-        labArea.addView(labRow("USB DAC / HI-RES","ROADMAP // HARDWARE DETECT",BLUE));
-        labArea.addView(labRow("DSD / BIT-PERFECT","ROADMAP // WHEN SUPPORTED",CYAN));
-        root.addView(labArea);
+        Button direct = button("4  •  URL RADIO DIRECTE", VIOLET);
+        direct.setOnClickListener(v -> {
+            if (actions != null) actions.onAddRadio();
+        });
+        root.addView(direct, lp(dp(52), dp(3), dp(4)));
 
-        LinearLayout modules=row();
-        modules.addView(module("EQ","20 BAND",VIOLET),new LinearLayout.LayoutParams(0,dp(60),1f));
-        modules.addView(gap(6),new LinearLayout.LayoutParams(dp(6),1));
-        modules.addView(module("SPACE","3D FIELD",CYAN),new LinearLayout.LayoutParams(0,dp(60),1f));
-        modules.addView(gap(6),new LinearLayout.LayoutParams(dp(6),1));
-        modules.addView(module("RADIO","WORLD",PINK),new LinearLayout.LayoutParams(0,dp(60),1f));
-        root.addView(modules,new LinearLayout.LayoutParams(-1,dp(66)));
+        resume = button("5  •  DERNIÈRE RADIO", CYAN);
+        resume.setOnClickListener(v -> {
+            if (actions != null) actions.onResumeLastRadio();
+        });
+        root.addView(resume, lp(dp(52), dp(3), dp(10)));
 
-        TextView privacy=text("PRIVACY CORE // AUCUN PRÉNOM AFFICHÉ // NO ADS",7,MUTED,true);
-        privacy.setGravity(Gravity.CENTER);
-        root.addView(privacy,new LinearLayout.LayoutParams(-1,dp(34)));
+        TextView diagTitle = text("DIAGNOSTIC EN DIRECT", 13, DANGER, true);
+        root.addView(diagTitle, new LinearLayout.LayoutParams(-1, dp(30)));
 
-        renderScreen();
+        log = text("", 10, WHITE, false);
+        log.setGravity(Gravity.TOP | Gravity.LEFT);
+        log.setPadding(dp(10), dp(10), dp(10), dp(10));
+        log.setBackground(panel(DANGER));
+        log.setMovementMethod(new ScrollingMovementMethod());
+        root.addView(log, new LinearLayout.LayoutParams(-1, dp(220)));
+
+        TextView footer = text(
+                "Aucun prénom affiché • aucun compte • aucun cloud • moteur Android natif",
+                8, MUTED, false);
+        footer.setGravity(Gravity.CENTER);
+        root.addView(footer, new LinearLayout.LayoutParams(-1, dp(42)));
     }
 
-    public void setActions(Actions a){actions=a;renderScreen();}
-    public void setPlaying(boolean v){playing=v;play.setText(v?"Ⅱ":"▶");orb.setActive(v);hud.setActive(v);}
-    public void setTrackTitle(String v){if(v!=null&&!v.isEmpty())title.setText(v);}
-    public void setTrackSubtitle(String v){subtitle.setText(v==null?"":v);}
-    public void setStatus(String v){status.setText(v==null?"":v);}
-    public void setSignalDiagnostics(String s,String out){signal.setText(s==null?"Format en attente":s);route.setText(out==null?"Android Audio":out);}
-    public void setProgress(float p,long pos,long dur){
-        int next=Math.round(Math.max(0f,Math.min(1f,p))*1000f);
-        String label=format(pos)+"   //   "+(dur>0?format(dur):"LIVE");
-        if(positionMs==pos&&durationMs==dur&&seek.getProgress()==next&&label.contentEquals(time.getText()))return;
-        positionMs=pos;durationMs=dur;
-        if(seek.getProgress()!=next)seek.setProgress(next);
-        if(!label.contentEquals(time.getText()))time.setText(label);
-    }
-    public void showHome(){screen=Screen.HOME;renderScreen();}
-
-    private void renderScreen(){
-        if(screen==Screen.HOME){
-            coreLabel.setText("NEXUS CORE // QUANTUM PLAYER");
-            sectionInfo.setText("PLAYER // LOCAL HIGH FIDELITY");
-            primary.setText("＋  IMPORTER UN FICHIER AUDIO");
-            primary.setVisibility(VISIBLE);
-            secondary.setText("◉  TEST AUDIO INTERNE");
-            secondary.setVisibility(VISIBLE);
-            third.setVisibility(GONE);
-            actionArea.setVisibility(VISIBLE);
-            labArea.setVisibility(GONE);
-            orb.setVisibility(VISIBLE);
-        }else if(screen==Screen.RADIO){
-            coreLabel.setText("NEXUS CORE // RADIO FIELD");
-            sectionInfo.setText("RADIO // LIVE WORLD SIGNAL");
-            primary.setText("◎  EXPLORER LES RADIOS DU MONDE");
-            secondary.setText("＋  AJOUTER UNE URL DIRECTE");
-            third.setText(actions!=null&&actions.hasSavedRadio()?"↻  REPRENDRE LA DERNIÈRE RADIO":"AUCUNE RADIO ENREGISTRÉE");
-            primary.setVisibility(VISIBLE);
-            secondary.setVisibility(VISIBLE);
-            third.setVisibility(VISIBLE);
-            actionArea.setVisibility(VISIBLE);
-            labArea.setVisibility(GONE);
-            orb.setVisibility(VISIBLE);
-        }else{
-            coreLabel.setText("NEXUS CORE // AUDIO LAB");
-            sectionInfo.setText("AUDIO LAB // SIGNAL ARCHITECTURE");
-            actionArea.setVisibility(GONE);
-            labArea.setVisibility(VISIBLE);
-            orb.setVisibility(VISIBLE);
-        }
+    public void setActions(Actions value) {
+        actions = value;
+        resume.setText(value != null && value.hasSavedRadio()
+                ? "5  •  REPRENDRE LA DERNIÈRE RADIO"
+                : "5  •  AUCUNE RADIO ENREGISTRÉE");
     }
 
-    private TextView tab(String label,Screen target){
-        TextView v=action(label,CYAN);
-        v.setTextSize(8);
-        v.setOnClickListener(x->{screen=target;renderScreen();});
-        return v;
+    public void setTitleText(String main, String sub) {
+        title.setText(main == null ? "" : main);
+        subtitle.setText(sub == null ? "" : sub);
     }
 
-    private TextView action(String label,int accent){
-        TextView v=text(label,10,WHITE,true);
-        v.setGravity(Gravity.CENTER);
-        v.setBackground(glass(accent,0x23101A31,16));
-        v.setPadding(dp(8),0,dp(8),0);
-        return v;
+    public void setStatus(String value) {
+        status.setText(value == null ? "" : value);
     }
 
-    private TextView miniPanel(String s,int accent){
-        TextView v=text(s,7,accent,true);
-        v.setGravity(Gravity.CENTER);
-        v.setBackground(glass(accent,0x26101A31,12));
-        return v;
+    public void setPlaying(boolean value) {
+        play.setText(value ? "Ⅱ  PAUSE" : "▶  PLAY / PAUSE");
     }
 
-    private View labRow(String name,String sub,int accent){
-        LinearLayout r=column();
-        r.setPadding(dp(12),dp(7),dp(12),dp(5));
-        r.setBackground(glass(accent,0x18101A31,14));
-        r.addView(text(name,9,WHITE,true),new LinearLayout.LayoutParams(-1,dp(22)));
-        r.addView(text(sub,7,accent,false),new LinearLayout.LayoutParams(-1,dp(18)));
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(48));
-        lp.setMargins(0,0,0,dp(6));
-        r.setLayoutParams(lp);
-        return r;
+    public void setProgress(float fraction, long positionMs, long durationMs) {
+        int value = Math.round(Math.max(0f, Math.min(1f, fraction)) * 1000f);
+        if (seek.getProgress() != value) seek.setProgress(value);
+        time.setText(format(positionMs) + " / " + format(durationMs));
     }
 
-    private TextView module(String a,String b,int accent){
-        TextView v=text(a+"\n"+b,8,WHITE,true);
-        v.setGravity(Gravity.CENTER);
-        v.setBackground(glass(accent,0x18101A31,14));
-        return v;
+    public void appendLog(String message) {
+        if (message == null || message.isEmpty()) return;
+        String old = log.getText().toString();
+        String next = old.isEmpty() ? "• " + message : old + "\n• " + message;
+        if (next.length() > 6000) next = next.substring(next.length() - 6000);
+        log.setText(next);
+        log.post(() -> {
+            int bottom = log.getLayout() == null ? 0 : log.getLayout().getLineTop(log.getLineCount());
+            int scroll = bottom - log.getHeight();
+            if (scroll > 0) log.scrollTo(0, scroll);
+        });
     }
 
-    private TextView text(String s,float size,int color,boolean bold){
-        TextView v=new TextView(getContext());
-        v.setText(s);v.setTextSize(size);v.setTextColor(color);
+    private Button button(String label, int accent) {
+        Button b = new Button(getContext());
+        b.setText(label);
+        b.setAllCaps(false);
+        b.setTextColor(WHITE);
+        b.setTextSize(10);
+        b.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        b.setGravity(Gravity.CENTER);
+        b.setBackground(panel(accent));
+        return b;
+    }
+
+    private TextView text(String value, float size, int color, boolean bold) {
+        TextView v = new TextView(getContext());
+        v.setText(value);
+        v.setTextSize(size);
+        v.setTextColor(color);
         v.setGravity(Gravity.CENTER_VERTICAL);
-        if(bold)v.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        if (bold) v.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         return v;
     }
 
-    private LinearLayout row(){LinearLayout l=new LinearLayout(getContext());l.setOrientation(LinearLayout.HORIZONTAL);l.setGravity(Gravity.CENTER_VERTICAL);return l;}
-    private LinearLayout column(){LinearLayout l=new LinearLayout(getContext());l.setOrientation(LinearLayout.VERTICAL);return l;}
-    private Space gap(int n){Space s=new Space(getContext());s.setMinimumWidth(dp(n));s.setMinimumHeight(dp(n));return s;}
+    private LinearLayout row() {
+        LinearLayout l = new LinearLayout(getContext());
+        l.setOrientation(LinearLayout.HORIZONTAL);
+        l.setGravity(Gravity.CENTER_VERTICAL);
+        return l;
+    }
 
-    private GradientDrawable glass(int accent,int fill,int radius){
-        GradientDrawable d=new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{fill,Color.argb(Color.alpha(fill),4,14,30)});
-        d.setCornerRadius(dp(radius));
-        d.setStroke(dp(1),Color.argb(105,Color.red(accent),Color.green(accent),Color.blue(accent)));
+    private GradientDrawable panel(int accent) {
+        GradientDrawable d = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{PANEL, 0xFF10152B});
+        d.setCornerRadius(dp(16));
+        d.setStroke(dp(1), accent);
         return d;
     }
 
-    private int dp(float v){return Math.round(v*getResources().getDisplayMetrics().density);}
-    private static String format(long ms){if(ms<=0)return"0:00";long s=ms/1000;return String.format(Locale.US,"%d:%02d",s/60,s%60);}
+    private LinearLayout.LayoutParams lp(int height, int top, int bottom) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, dp(height));
+        p.setMargins(0, dp(top), 0, dp(bottom));
+        return p;
+    }
+
+    private int dp(float value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private static String format(long ms) {
+        if (ms <= 0) return "0:00";
+        long seconds = ms / 1000;
+        return String.format(Locale.US, "%d:%02d", seconds / 60, seconds % 60);
+    }
 }
