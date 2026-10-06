@@ -101,7 +101,7 @@ public final class NexusMusicView extends FrameLayout {
         coreLp.setMargins(0,0,0,dp(12));
         cockpit.addView(coreLabel,coreLp);
 
-        TextView dsp=miniPanel("DSP\n64 FLOAT",PINK);
+        TextView dsp=miniPanel("DSP\nROADMAP",PINK);
         FrameLayout.LayoutParams dspLp=new FrameLayout.LayoutParams(dp(84),dp(54),Gravity.LEFT|Gravity.BOTTOM);
         dspLp.setMargins(dp(8),0,0,dp(12));
         cockpit.addView(dsp,dspLp);
