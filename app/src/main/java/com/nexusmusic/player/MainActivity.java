@@ -72,7 +72,19 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
 
         view.setStatus("PRÊT");
         view.appendLog("NEXUS CORE 2.0 démarré");
+        android.util.Log.i("NEXUS_RECOVERY", "STARTED");
         handler.post(ticker);
+
+        if (BuildConfig.DEBUG) {
+            Intent launchIntent = getIntent();
+            if (launchIntent.getBooleanExtra("self_test_audio", false)) {
+                handler.postDelayed(this::onTestAudio, 500L);
+            } else if (launchIntent.getBooleanExtra("self_test_picker", false)) {
+                handler.postDelayed(this::onPickLocalAudio, 500L);
+            } else if (launchIntent.getBooleanExtra("self_test_radio", false)) {
+                handler.postDelayed(() -> searchRadios("France", "name"), 500L);
+            }
+        }
     }
 
     @Override protected void onDestroy() {
@@ -262,6 +274,9 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
             try {
                 mp.start();
                 android.util.Log.i("NEXUS_NATIVE_AUDIO", "PLAYING " + title);
+                if ("NEXUS AUDIO TEST".equals(title)) {
+                    android.util.Log.i("NEXUS_RECOVERY", "AUDIO_PASS");
+                }
                 view.setPlaying(true);
                 view.setStatus("LECTURE ACTIVE");
                 view.appendLog("PLAYING : " + title);
@@ -287,6 +302,7 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
             String message = "MediaPlayer erreur what=" + what + " extra=" + extra;
             view.setStatus("ERREUR AUDIO");
             view.appendLog(message);
+            android.util.Log.e("NEXUS_RECOVERY", "PLAYER_ERROR " + message);
             Toast.makeText(this, message, Toast.LENGTH_LONG).show();
             return true;
         });
@@ -397,6 +413,7 @@ public final class MainActivity extends Activity implements NexusMusicView.Actio
     private void showStations(List<Station> stations) {
         view.setStatus("RADIOS TROUVÉES");
         view.appendLog(stations.size() + " radios trouvées");
+        android.util.Log.i("NEXUS_RECOVERY", "RADIO_DIRECTORY_PASS " + stations.size());
 
         String[] labels = new String[stations.size()];
         for (int i = 0; i < stations.size(); i++) labels[i] = stations.get(i).label();
